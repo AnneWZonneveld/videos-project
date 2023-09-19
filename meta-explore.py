@@ -1,20 +1,28 @@
 """ File to explore meta data BOLD moments"""
+
 import os
 import pandas as pd
 import numpy as np
+import pickle
 import matplotlib.pyplot as plt 
 import seaborn as sns
 from IPython import embed as shell
 import scipy
-import gensim.downloader
-from gensim.models import KeyedVectors
+import transformers
+# from huggingface_hub import hf_hub_download
+import fasttext
+import fasttext.util
+from sklearn.manifold import MDS
+import bokeh.plotting as bp
+from bokeh.models import HoverTool, BoxSelectTool
+from bokeh.plotting import figure, show, output_notebook
 
 # Load json file to df
 file_path = '/scratch/giffordale95/projects/eeg_videos/videos_metadata/annotations.json'
 md = pd.read_json(file_path).transpose()
 
 # Set image folder path
-img_folder = '/scratch/azonneveld/meta-explore'
+res_folder = '/scratch/azonneveld/meta-explore'
 
 def load_freq_data():
 
@@ -54,6 +62,10 @@ def load_freq_data():
             vars_dict[var] = count_df
 
         zets_dict[zet] = vars_dict
+
+    # Save
+    with open(res_folder+ '/freq_data.pkl', 'wb') as f:
+        pickle.dump(zets_dict, f)
 
     return zets_dict
 
@@ -97,7 +109,7 @@ def freq_descript(freq_data):
             ax[j, i].set_xlabel('Labels')
 
     fig.tight_layout()
-    img_path = img_folder + '/label-hist.png'
+    img_path = res_folder + '/label-hist.png'
     plt.savefig(img_path)
     plt.clf()
 
@@ -119,31 +131,67 @@ def freq_descript(freq_data):
             ax[j,i].tick_params(axis='y', labelsize=6)
 
     fig.tight_layout()
-    img_path = img_folder + '/label-hist-top.png'
+    img_path = res_folder + '/label-hist-top.png'
     plt.savefig(img_path)
     plt.clf()
 
 
-def load_embeddings(freq_data):
-
-    shell()
-    # # Load word model 
-    # w2v_vectors = gensim.downloader.load('word2vec-google-news-300')
-
-    # #Test
-    # w2v_vectors.most_similar('twitter')
-    # w2v_vectors['twitter'].shape
-    # w2v_vectors.distance("media", "twitter")
-
-    # # Get label vectors (works for scenes/actions but not for objects) --> what is good word model? which corpus
-    # labels = np.unique(vars_dict['scenes']['label'])
-    # labels_vector = []
-    # w2v_vectors[labels[301]]
-
-    w_vectors = gensim.downloader.load('fasttext-wiki-news-subwords-300')
-
-
-# ------------------- MAIN
+# ------------------ Load freq data en plots
 zets_dict = load_freq_data()
-freq_descript(zets_dict)
-load_embeddings(zets_dict)
+# freq_descript(zets_dict)
+
+shell()
+# ----------------- Make bokeh MDS plots
+# %% Imports and fasttext 
+import fasttext
+import pickle
+import bokeh.plotting as bp
+from bokeh.models import HoverTool, BoxSelectTool
+from bokeh.plotting import figure, show, output_notebook
+from sklearn.manifold import MDS
+import numpy as np
+import pandas as pd
+
+# Load word model 
+print('Loading word model')
+ft = fasttext.load_model('./downloads/cc.en.300.bin')
+
+# %% Load freq dictionary 
+with open('/scratch/azonneveld/meta-explore/freq_data.pkl', 'rb') as f:
+    freq_data = pickle.load(f)
+
+# %% Get word vectors for labels
+vars_dict = freq_data['train']
+labels = np.unique(vars_dict['actions']['label'])
+n_labels = len(labels)
+
+wv = np.empty((n_labels, 300), dtype='object')
+for i in range(n_labels):
+    label = labels[i]
+    c_vect = ft.get_word_vector(label)
+    wv[i, :] = c_vect
+
+# %% MDS plot
+mds_model = MDS(n_components=2, random_state=0)
+mds_ft = mds_model.fit_transform(wv)
+mds_df = pd.DataFrame(mds_ft, columns=['x', 'y'])
+mds_df['words'] = list(labels)
+
+mds_plot = bp.figure(plot_width=500, plot_height=400, title="FT Action labels",
+tools="pan,wheel_zoom,box_zoom,reset,hover",
+x_axis_type=None, y_axis_type=None, min_border=1)
+mds_plot.scatter(x='x', y='y', source=mds_df,color = 'darkcyan')
+hover = mds_plot.select(dict(type=HoverTool))
+hover.tooltips={"word": "@words"}
+bp.output_file(filename="./meta-explore/mds-test.html", title="mds-test")
+bp.save(mds_plot)
+
+try:
+    bp.reset_output()
+    bp.output_notebook()
+    bp.show(mds_plot)
+except:
+    bp.output_notebook()
+    bp.show(mds_plot)
+
+# %%
