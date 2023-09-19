@@ -152,6 +152,7 @@ from sklearn.manifold import MDS
 import numpy as np
 import pandas as pd
 
+#%%
 # Load word model 
 print('Loading word model')
 ft = fasttext.load_model('./downloads/cc.en.300.bin')
@@ -159,43 +160,6 @@ ft = fasttext.load_model('./downloads/cc.en.300.bin')
 # %% Load freq dictionary 
 with open('/scratch/azonneveld/meta-explore/freq_data.pkl', 'rb') as f:
     freq_data = pickle.load(f)
-
-# # %% Get word vectors for labels
-# vars_dict = freq_data['train']
-# labels = np.unique(vars_dict['actions']['label'])
-# n_labels = len(labels)
-
-# wv = np.empty((n_labels, 300), dtype='object')
-# for i in range(n_labels):
-#     label = labels[i]
-#     c_vect = ft.get_word_vector(label)
-#     wv[i, :] = c_vect
-
-# mds_model = MDS(n_components=2, random_state=0)
-# mds_ft = mds_model.fit_transform(wv)
-# mds_df = pd.DataFrame(mds_ft, columns=['x', 'y'])
-# mds_df['words'] = list(labels)
-# mds_df['count'] = list(vars_dict['actions']['count'])
-
-# mds_plot = bp.figure(plot_width=500, plot_height=400, title="FastText Action labels",
-# tools="pan,wheel_zoom,box_zoom,reset,hover",
-# x_axis_type=None, y_axis_type=None, min_border=1)
-# color_mapper = LinearColorMapper(palette='Plasma256', low=min(mds_df['count']), high=max(mds_df['count']))
-# mds_plot.scatter(x='x', y='y', source=mds_df, color={'field': 'count', 'transform': color_mapper})
-# hover = mds_plot.select(dict(type=HoverTool))
-# hover.tooltips={"word": "@words",
-#                 "count": "@count"}
-# bp.output_file(filename="./meta-explore/mds-test.html", title="mds-test")
-# bp.save(mds_plot)
-
-# try:
-#     bp.reset_output()
-#     bp.output_notebook()
-#     bp.show(mds_plot)
-# except:
-#     bp.output_notebook()
-#     bp.show(mds_plot)
-
 
 # %% Get word vectors for labels
 
@@ -262,4 +226,93 @@ except:
     bp.output_notebook()
     bp.show(complete_fig)
 
+
+# --------------- TRANSFORMER
 # %%
+from transformers import BertTokenizer, BertModel
+import pickle
+
+print("Downloading pretrained BERT")
+tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
+model = BertModel.from_pretrained("bert-base-uncased")
+model.eval()
+
+# TEST
+# test_text = "Whiskey flask"
+# encoded_input = tokenizer(test_text, return_tensors='pt')
+# output = model(**encoded_input)
+
+with open('/scratch/azonneveld/meta-explore/freq_data.pkl', 'rb') as f:
+    freq_data = pickle.load(f)
+
+# %% Get word vectors for labels
+
+zets = ['train', 'test']
+vars = ['objects', 'scenes', 'actions']
+
+mds_plots = []
+wv_dict = {}
+
+# Irrelevant tokens are [CLS], [SEP], + and /
+ir_tokens = [101, 102, 1009, 1013]
+
+for zet in zets:
+    temp_wv_dict = {}
+
+    for var in vars:
+
+        # Extract embeddings
+        c_dict = freq_data[zet][var]
+        labels = np.unique(c_dict['label'])
+        n_labels = len(labels)
+
+        wv = np.empty((n_labels, 300), dtype='object')
+        for i in range(n_labels):
+            label = labels[i]
+            encoded_input = tokenizer(label, return_tensors='pt')
+            tokens = encoded_input['input_ids']
+
+            output = model(**encoded_input)
+            embedding = output.last_hidden_state
+
+            # Check for irrelevant tokens
+            idx_bool = np.isin(tokens, ir_tokens)[0]
+            idx =  np.argwhere(idx_bool==False)
+            n_idx = idx.shape[0]
+
+            # Concat relevant and average embeddings
+            concat_emb = np.empty((n_idx, 768 ))
+            for j in range(n_idx):
+                id = idx[j][0]
+                concat_emb[j] = embedding[:, id, :].detach().numpy()
+
+            av_emb = np.mean(concat_emb, axis=0)
+
+        # TO DO
+        #     c_vect = ft.get_word_vector(label)
+        #     wv[i, :] = c_vect
+
+        # # Store embeddings
+        # temp_wv_dict[var] = wv
+
+        # # Perform MDS 
+        # print(f"Performing MDS for {zet} {var}")
+        # mds_model = MDS(n_components=2, random_state=0)
+        # mds_ft = mds_model.fit_transform(wv)
+        # mds_df = pd.DataFrame(mds_ft, columns=['x', 'y'])
+        # mds_df['words'] = list(labels)
+        # mds_df['count'] = list(c_dict['count'])
+
+        # mds_plot = bp.figure(plot_width=500, plot_height=400, title=f"FastText {zet} {var} labels",
+        # tools="pan,wheel_zoom,box_zoom,reset,hover",
+        # x_axis_type=None, y_axis_type=None, min_border=1)
+        # color_mapper = LinearColorMapper(palette='Plasma256', low=min(mds_df['count']), high=max(mds_df['count']))
+        # mds_plot.scatter(x='x', y='y', source=mds_df, color={'field': 'count', 'transform': color_mapper})
+        # hover = mds_plot.select(dict(type=HoverTool))
+        # hover.tooltips={"word": "@words",
+        #                 "count": "@count"}
+        
+        # mds_plots.append(mds_plot)
+
+    wv_dict[zet] = temp_wv_dict
+
