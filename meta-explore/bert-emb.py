@@ -26,17 +26,10 @@ tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
 model = BertModel.from_pretrained("bert-base-uncased")
 model.eval()
 
-# TEST
-# test_text = "Whiskey flask"
-# encoded_input = tokenizer(test_text, return_tensors='pt')
-# tokenkizer.tokenize('word')
-# output = model(**encoded_input)
-
 with open('/scratch/azonneveld/meta-explore/freq_data.pkl', 'rb') as f:
     freq_data = pickle.load(f)
 
 # %% Get word vectors for labels
-
 zets = ['train', 'test']
 vars = ['objects', 'scenes', 'actions']
 
@@ -84,8 +77,6 @@ for zet in zets:
 
             # Reduce to 300 for fair comparison fasttext?
 
-        shell ()
-
         print(f"Performing MDS for {zet} {var}")
         mds_model = MDS(n_components=2, random_state=0)
         mds_ft = mds_model.fit_transform(wv)
@@ -102,14 +93,12 @@ for zet in zets:
         hover.tooltips={"word": "@words",
                         "count": "@count"}
 
-        # Test plot
-        bp.output_file(filename=f"/scratch/azonneveld/meta-explore/bert-test.html", title="bert-test") 
-        bp.save(mds_plot)
+        mds_plots.append(mds_plot)
         
     wv_dict[zet] = temp_wv_dict
 
 # Save all wvs
-with open(f'scratch/azonneveld/meta-explore/bert_wv', 'wb') as f:
+with open(f'/scratch/azonneveld/meta-explore/bert_wv', 'wb') as f:
         pickle.dump(wv_dict, f)
 
 # %% Save figure
@@ -119,3 +108,43 @@ complete_fig = layout([[mds_plots[0], mds_plots[1], mds_plots[2]],
 
 bp.output_file(filename=f"/scratch/azonneveld/meta-explore/mds-overview-bert.html", title="mds-overview")
 bp.save(complete_fig)
+
+# # More evaluations
+# vocab = ft.words # how to get the vocab?
+# in_subset = ['home', 'love', 'understand', 'books', 'watch', 'town', 'hockey', 'friend', 'pay', 'need']
+# out_subset = ['balance beam', 'zen garden', 'storage room', 'art school', 'ski slope', 'baseball player', 'hot pot', 'race car', 'playing music', 'coral reef'] # actually check 
+
+# # Check --> true
+# in_checks = []
+# out_checks = []
+# for i in range(len(out_subset)):
+#     in_word = in_subset[i]
+#     out_word = out_subset[i]
+#     in_check = vocab.count(in_word)
+#     out_check = vocab.count(out_word)
+#     in_checks.append(in_check)
+#     out_checks.append(out_check)
+# print(f"in_checks: {in_checks}")
+# print(f"out_checks: {out_checks}")
+
+# in_neighbours = {}
+# out_neighbours = {}
+# for i in range(len(in_subset)):
+#     in_word = in_subset[i]
+#     in_neighbours[in_word] = ft.get_nearest_neighbors(in_word, k=5)
+#     out_word = out_subset[i]
+#     out_neighbours[out_word] = ft.get_nearest_neighbors(out_word, k=5)
+
+# print(f"{model} in vocab neigh: ")
+# print(f"{in_neighbours}")
+# print(f"{model} out vocab neigh: ")
+# print(f"{out_neighbours}")
+
+# a1 = ft.get_analogies("berlin", "germany", "france") #paris
+# a2 = ft.get_analogies("king", "prince", "queen") 
+# a3 = ft.get_analogies("psx", "sony", "nintendo") # gamecube
+# a4 = ft.get_analogies("ronaldo", "soccer", "tennis")
+# print(a1)
+# print(a2)
+# print(a3)
+# print(a4)
