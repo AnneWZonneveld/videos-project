@@ -168,17 +168,14 @@ if descript == True:
     out_neighbours = {}
     for i in range(len(in_subset)):
         in_word = in_subset[i]
-        # in_word_emb = np.expand_dims(np.asarray(embeddings_ds['embeddings'][embeddings_ds['labels']==in_word], dtype=np.float32), axis=0)
-
         in_word_emb = np.expand_dims(np.asarray(get_embeddings(in_word).detach().numpy()[0], dtype=np.float32), axis=0)
-
         scores, samples = embeddings_ds.get_nearest_examples("embeddings", in_word_emb, k=5)
         samples = samples['labels']
         in_res = (scores, samples)
         in_neighbours[in_word] = in_res
 
         out_word = out_subset[i]
-        out_word_emb =  np.expand_dims(np.asarray(embeddings_ds['embeddings'][embeddings_ds['labels']==out_word], dtype=np.float32), axis=0)
+        out_word_emb = np.expand_dims(np.asarray(get_embeddings(out_word).detach().numpy()[0], dtype=np.float32), axis=0)
         scores, samples = embeddings_ds.get_nearest_examples("embeddings", out_word_emb, k=5)
         samples = samples['labels']
         out_res = (scores, samples)               
