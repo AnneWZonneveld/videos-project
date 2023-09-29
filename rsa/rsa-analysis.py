@@ -53,8 +53,6 @@ for model in models:
             rdm = pairwise_distances(f_matrix, metric=metric)
             rdm_vars[var] = rdm
             rdms.append(rdm)
-            maxs.append(np.max(rdm))
-            mins.append(np.min(rdm))
 
         rdm_zets[zet] = rdm_vars
     
@@ -63,14 +61,36 @@ for model in models:
 with open(f'/scratch/azonneveld/rsa/rdm_models.pkl', 'wb') as f:
             pickle.dump(rdm_models, f)
 
-# Create plot
-max_dist = np.max(np.asarray(maxs))
-min_dist = np.min(np.asarray(mins))
+# Get max and min of all rdms per model
+model_ultimates = {}
+for model in models:
+    max_min_dict ={}
+    model_maxs = []
+    model_mins = []
+    for zet in zets:
+        for var in vars:
+            rdm = rdm_models[model][zet][var]
+            max = np.max(rdm)
+            min = np.max(rdm)
+            model_maxs.append(max)
+            model_mins.append(min)
+    model_max = np.max(np.asarray(model_maxs))
+    model_min = np.min(np.asarray(model_mins))
+    max_min_dict['max'] = model_max
+    max_min_dict['min'] = model_min
+    model_ultimates[model] = max_min_dict
 
+with open(f'/scratch/azonneveld/rsa/model_ultimates.pkl', 'wb') as f:
+            pickle.dump(model_ultimates, f)
+
+# Create model plots
 for model in models:
 
     fig, ax = plt.subplots(2,3, dpi = 300)
-    fig.suptitle(f'{model} RDMs')
+    fig.suptitle(f'Type 1 {model} RDMs')
+
+    max_dist = model_ultimates[model]['max']
+    min_dist = model_ultimates[model]['min']
 
     for j in range(len(zets)):
         zet = zets[j]
@@ -92,7 +112,6 @@ for model in models:
     img_path = res_folder + f'/{model}_rdms.png'
     plt.savefig(img_path)
     plt.clf()
-
 
 
 
