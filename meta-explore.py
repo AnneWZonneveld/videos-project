@@ -18,7 +18,7 @@ from bokeh.models import HoverTool, BoxSelectTool
 from bokeh.plotting import figure, show, output_notebook
 
 # Load json file to df
-file_path = '/scratch/giffordale95/projects/eeg_videos/videos_metadata/annotations.json'
+file_path = '/scratch/azonneveld/downloads/annotations_humanScenes.json'
 md = pd.read_json(file_path).transpose()
 
 # Set image folder path
@@ -36,6 +36,33 @@ def load_freq_data():
     zets = ['train', 'test']
     vars_oi = ['objects', 'scenes', 'actions']
 
+    # zets_dict = {}
+    # for zet in zets:
+    #     temp_zet = md[md['set']==zet]
+    #     n_trials = temp_zet.shape[0]
+    #     vars_dict = {}
+
+    #     for var in vars_oi:
+    #         temp_df = temp_zet[var].to_numpy()
+    #         all_labels = np.empty(5*n_trials, dtype=object)
+
+    #         for i in range(5*n_trials):
+    #             trial = i // 5
+    #             j = i % 5 
+    #             all_labels[i] = temp_df[trial][j]
+            
+    #         label_unique, label_counts = np.unique(all_labels, return_counts=True)
+    #         label_unique = np.expand_dims(label_unique, axis = 1)
+    #         label_counts = np.expand_dims(label_counts, axis = 1)
+
+    #         count_df = pd.concat([pd.DataFrame(label_unique), pd.DataFrame(label_counts)], axis=1)
+    #         count_df.columns = ['label', 'count']
+    #         count_df = count_df.sort_values(by='count', axis=0, ascending=False)
+
+    #         vars_dict[var] = count_df
+
+    #     zets_dict[zet] = vars_dict
+
     zets_dict = {}
     for zet in zets:
         temp_zet = md[md['set']==zet]
@@ -44,14 +71,16 @@ def load_freq_data():
 
         for var in vars_oi:
             temp_df = temp_zet[var].to_numpy()
-            all_labels = np.empty(5*n_trials, dtype=object)
-
-            for i in range(5*n_trials):
-                trial = i // 5
-                j = i % 5 
-                all_labels[i] = temp_df[trial][j]
             
-            label_unique, label_counts = np.unique(all_labels, return_counts=True)
+            all_labels = []
+            for i in range(n_trials):
+                labels = temp_df[i]
+
+                for j in range(len(labels)):
+                    label = labels[j]
+                    all_labels.append(label)
+            
+            label_unique, label_counts = np.unique(np.array(all_labels), return_counts=True)
             label_unique = np.expand_dims(label_unique, axis = 1)
             label_counts = np.expand_dims(label_counts, axis = 1)
 
@@ -138,181 +167,4 @@ def freq_descript(freq_data):
 
 # ------------------ Load freq data en plots
 zets_dict = load_freq_data()
-# freq_descript(zets_dict)
-
-shell()
-# ----------------- Make bokeh MDS plots
-# %% Imports and fasttext 
-import fasttext
-import pickle
-import bokeh.plotting as bp
-from bokeh.models import HoverTool, BoxSelectTool, ColumnarDataSource, LinearColorMapper
-from bokeh.layouts import row, column, layout
-from sklearn.manifold import MDS
-import numpy as np
-import pandas as pd
-
-#%%
-# Load word model 
-print('Loading word model')
-ft = fasttext.load_model('./downloads/cc.en.300.bin')
-
-# %% Load freq dictionary 
-with open('/scratch/azonneveld/meta-explore/freq_data.pkl', 'rb') as f:
-    freq_data = pickle.load(f)
-
-# %% Get word vectors for labels
-
-zets = ['train', 'test']
-vars = ['objects', 'scenes', 'actions']
-
-mds_plots = []
-wv_dict = {}
-
-# Loop through sets and variables
-for zet in zets:
-    temp_wv_dict = {}
-
-    for var in vars:
-
-        # Extract embeddings
-        c_dict = freq_data[zet][var]
-        labels = np.unique(c_dict['label'])
-        n_labels = len(labels)
-
-        wv = np.empty((n_labels, 300), dtype='object')
-        for i in range(n_labels):
-            label = labels[i]
-            c_vect = ft.get_word_vector(label)
-            wv[i, :] = c_vect
-
-        # Store embeddings
-        temp_wv_dict[var] = wv
-
-        # Perform MDS 
-        print(f"Performing MDS for {zet} {var}")
-        mds_model = MDS(n_components=2, random_state=0)
-        mds_ft = mds_model.fit_transform(wv)
-        mds_df = pd.DataFrame(mds_ft, columns=['x', 'y'])
-        mds_df['words'] = list(labels)
-        mds_df['count'] = list(c_dict['count'])
-
-        mds_plot = bp.figure(plot_width=500, plot_height=400, title=f"FastText {zet} {var} labels",
-        tools="pan,wheel_zoom,box_zoom,reset,hover",
-        x_axis_type=None, y_axis_type=None, min_border=1)
-        color_mapper = LinearColorMapper(palette='Plasma256', low=min(mds_df['count']), high=max(mds_df['count']))
-        mds_plot.scatter(x='x', y='y', source=mds_df, color={'field': 'count', 'transform': color_mapper})
-        hover = mds_plot.select(dict(type=HoverTool))
-        hover.tooltips={"word": "@words",
-                        "count": "@count"}
-        
-        mds_plots.append(mds_plot)
-
-    wv_dict[zet] = temp_wv_dict
-
-# %% Show figure
-complete_fig = layout([[mds_plots[0], mds_plots[1], mds_plots[2]],
-        [mds_plots[3], mds_plots[4], mds_plots[5]]
-])
-
-bp.output_file(filename="./meta-explore/mds-overview.html", title="mds-overview")
-bp.save(complete_fig)
-
-try:
-    bp.reset_output()
-    bp.output_notebook()
-    bp.show(complete_fig)
-except:
-    bp.output_notebook()
-    bp.show(complete_fig)
-
-
-# --------------- TRANSFORMER
-# %%
-from transformers import BertTokenizer, BertModel
-import pickle
-
-print("Downloading pretrained BERT")
-tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
-model = BertModel.from_pretrained("bert-base-uncased")
-model.eval()
-
-# TEST
-# test_text = "Whiskey flask"
-# encoded_input = tokenizer(test_text, return_tensors='pt')
-# output = model(**encoded_input)
-
-with open('/scratch/azonneveld/meta-explore/freq_data.pkl', 'rb') as f:
-    freq_data = pickle.load(f)
-
-# %% Get word vectors for labels
-
-zets = ['train', 'test']
-vars = ['objects', 'scenes', 'actions']
-
-mds_plots = []
-wv_dict = {}
-
-# Irrelevant tokens are [CLS], [SEP], + and /
-ir_tokens = [101, 102, 1009, 1013]
-
-for zet in zets:
-    temp_wv_dict = {}
-
-    for var in vars:
-
-        # Extract embeddings
-        c_dict = freq_data[zet][var]
-        labels = np.unique(c_dict['label'])
-        n_labels = len(labels)
-
-        wv = np.empty((n_labels, 300), dtype='object')
-        for i in range(n_labels):
-            label = labels[i]
-            encoded_input = tokenizer(label, return_tensors='pt')
-            tokens = encoded_input['input_ids']
-
-            output = model(**encoded_input)
-            embedding = output.last_hidden_state
-
-            # Check for irrelevant tokens
-            idx_bool = np.isin(tokens, ir_tokens)[0]
-            idx =  np.argwhere(idx_bool==False)
-            n_idx = idx.shape[0]
-
-            # Concat relevant and average embeddings
-            concat_emb = np.empty((n_idx, 768 ))
-            for j in range(n_idx):
-                id = idx[j][0]
-                concat_emb[j] = embedding[:, id, :].detach().numpy()
-
-            av_emb = np.mean(concat_emb, axis=0)
-
-        # TO DO
-        #     c_vect = ft.get_word_vector(label)
-        #     wv[i, :] = c_vect
-
-        # # Store embeddings
-        # temp_wv_dict[var] = wv
-
-        # # Perform MDS 
-        # print(f"Performing MDS for {zet} {var}")
-        # mds_model = MDS(n_components=2, random_state=0)
-        # mds_ft = mds_model.fit_transform(wv)
-        # mds_df = pd.DataFrame(mds_ft, columns=['x', 'y'])
-        # mds_df['words'] = list(labels)
-        # mds_df['count'] = list(c_dict['count'])
-
-        # mds_plot = bp.figure(plot_width=500, plot_height=400, title=f"FastText {zet} {var} labels",
-        # tools="pan,wheel_zoom,box_zoom,reset,hover",
-        # x_axis_type=None, y_axis_type=None, min_border=1)
-        # color_mapper = LinearColorMapper(palette='Plasma256', low=min(mds_df['count']), high=max(mds_df['count']))
-        # mds_plot.scatter(x='x', y='y', source=mds_df, color={'field': 'count', 'transform': color_mapper})
-        # hover = mds_plot.select(dict(type=HoverTool))
-        # hover.tooltips={"word": "@words",
-        #                 "count": "@count"}
-        
-        # mds_plots.append(mds_plot)
-
-    wv_dict[zet] = temp_wv_dict
-
+freq_descript(zets_dict)

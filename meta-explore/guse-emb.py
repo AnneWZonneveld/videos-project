@@ -14,12 +14,12 @@ import pandas as pd
 import matplotlib.pyplot as plt 
 import seaborn as sns
 import scipy
+import tensorflow as tf
+import tensorflow_hub as hub
 import bokeh.plotting as bp
 from bokeh.models import HoverTool, BoxSelectTool, ColumnarDataSource, LinearColorMapper
 from bokeh.layouts import row, column, layout
 from sklearn.manifold import MDS
-import tensorflow as tf
-import tensorflow_hub as hub
 import re
 from datasets import load_dataset, Dataset, DatasetDict
 
@@ -72,7 +72,7 @@ if perform_MDS == True:
                 # Reduce to 300 for fair comparison fasttext?
 
                 # Save all embeddings
-                wv_dict[label] = embedding
+                wv_dict_all[label] = embedding
                 var_dict[label] = embedding
             
             zet_dict[var] = var_dict
@@ -84,7 +84,7 @@ if perform_MDS == True:
             mds_df['words'] = list(labels)
             mds_df['count'] = list(c_dict['count'])
 
-            mds_plot = bp.figure(plot_width=500, plot_height=400, title=f"bert {zet} {var} labels",
+            mds_plot = bp.figure(plot_width=500, plot_height=400, title=f"guse {zet} {var} labels",
             tools="pan,wheel_zoom,box_zoom,reset,hover",
             x_axis_type=None, y_axis_type=None, min_border=1)
             color_mapper = LinearColorMapper(palette='Plasma256', low=min(mds_df['count']), high=max(mds_df['count']))
@@ -130,13 +130,13 @@ if descript == True:
         lambda x: {"embeddings": embed([x['labels']]).numpy()[0]}
     )
     embeddings_ds.add_faiss_index(column='embeddings')
-
+    
     # Get nearest neighbours for and out vocab
     # in_subset = ['home', 'love', 'understand', 'books', 'watch', 'town', 'hockey', 'friend', 'pay', 'need']
     # out_subset = ['balance beam', 'zen garden', 'storage room', 'art school', 'ski slope', 'baseball player', 'hot pot', 'race car', 'playing music', 'coral reef'] 
 
     in_subset = ['jellyfish', 'limousine', 'orange', 'sunglasses', 'shipwreck', 'bar', 'aquarium', 'walking', 'studying', 'smoking']
-    out_subset = ['balance beam', 'zen garden', 'storage room', 'art school', 'ski slope', 'baseball player', 'hot pot', 'race car', 'playing music', 'coral reef'] 
+    out_subset = ['balance beam', 'zen garden', 'storage room', 'art school', 'ski slope', 'baseball player', 'hot pot', 'race car', 'playing+music', 'coral reef'] 
 
     in_neighbours = {}
     out_neighbours = {}
