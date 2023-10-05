@@ -219,7 +219,7 @@ def global_emb():
                 pickle.dump(new_md, f)
         
 
-def calc_t2_rdms(emb_type='global'): 
+def calc_t2_rdms(emb_type='global', sort=False): 
     """
     Emb_type: 'global', 'derived', 'first'
 
@@ -247,10 +247,11 @@ def calc_t2_rdms(emb_type='global'):
         for var in vars:
 
             # Sort RDM on derived global label
-            sort_var = 'glb_' + var +'_lab'
-            zet_md = zet_md.sort_values(by=sort_var,
-                                key=lambda x: np.argsort(index_natsorted(zet_md[sort_var]))
-                                )
+            if sort == True:
+                sort_var = 'glb_' + var +'_lab'
+                zet_md = zet_md.sort_values(by=sort_var,
+                                    key=lambda x: np.argsort(index_natsorted(zet_md[sort_var]))
+                                    )
 
             f_matrix = np.zeros((n_stimuli, n_features))
 
@@ -280,10 +281,14 @@ def calc_t2_rdms(emb_type='global'):
     elif emb_type == 'first':
         file_name = 'rdm_t2_guse_first.pkl'
     
-    with open(f'/scratch/azonneveld/rsa/{file_name}', 'wb') as f:
-                pickle.dump(rdm_zets, f)
+    if sort == True:
+        with open(f'/scratch/azonneveld/rsa/{file_name}_sorted', 'wb') as f:
+                    pickle.dump(rdm_zets, f)
+    else:
+        with open(f'/scratch/azonneveld/rsa/{file_name}', 'wb') as f:
+            pickle.dump(rdm_zets, f)
 
-def plot_t2_rdms(emb_type='global'):
+def plot_t2_rdms(emb_type='global', sort=False):
     print(f"Plotting t2 rdms {emb_type}")
 
     # Load rdms
@@ -294,8 +299,12 @@ def plot_t2_rdms(emb_type='global'):
     elif emb_type == 'first':
         file_name = 'rdm_t2_guse_first.pkl'
 
-    with open(f'/scratch/azonneveld/rsa/{file_name}', 'rb') as f: 
-        rdms = pickle.load(f)
+    if sort == True:   
+        with open(f'/scratch/azonneveld/rsa/{file_name}_sorted', 'rb') as f: 
+            rdms = pickle.load(f)
+    else:
+        with open(f'/scratch/azonneveld/rsa/{file_name}', 'rb') as f: 
+            rdms = pickle.load(f)
 
     # Get max and min of all rdms 
     max_min_dict ={}
@@ -315,7 +324,7 @@ def plot_t2_rdms(emb_type='global'):
 
     # Create plots
     fig, ax = plt.subplots(2,3, dpi = 500)
-    fig.suptitle(f'Type 2 GUSE RDMs {emb_type}')
+    fig.suptitle(f'Type 2 GUSE RDMs {emb_type}, sorted {sort} ')
 
     for j in range(len(zets)):
         zet = zets[j]
@@ -334,7 +343,10 @@ def plot_t2_rdms(emb_type='global'):
     cbar = fig.colorbar(im, ax=ax.ravel().tolist())
     cbar.ax.set_ylabel(f'{metric} distance', fontsize=12)
 
-    img_path = res_folder + f'/rdm_t2_guse_{emb_type}.png'
+    if sort == True:  
+        img_path = res_folder + f'/rdm_t2_guse_{emb_type}_sorted.png'
+    else:
+        img_path = res_folder + f'/rdm_t2_guse_{emb_type}.png'
     plt.savefig(img_path)
     plt.clf()
 
@@ -397,11 +409,15 @@ def rdm_t2_emb_type_sim():
 
 # Type 2 RDM analysis
 # global_emb()
-calc_t2_rdms('global')
-calc_t2_rdms('derived')
+calc_t2_rdms('global', sort=True)
+calc_t2_rdms('derived', sort=True)
+calc_t2_rdms('global', sort=False)
+calc_t2_rdms('derived', sort=False)
 # calc_t2_rdms('first')
-plot_t2_rdms('global')
-plot_t2_rdms('derived')
+plot_t2_rdms('global', sort=True)
+plot_t2_rdms('derived', sort=True)
+plot_t2_rdms('global', sort=False)
+plot_t2_rdms('derived', sort=False)
 # plot_t2_rdms('first')
 # rdm_t2_emb_type_sim()
 
