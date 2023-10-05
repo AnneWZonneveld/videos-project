@@ -186,6 +186,7 @@ def global_emb():
         print(f'calculating global emb {var}')
         global_embs = []
         global_labels = []
+        global_deriveds = []
 
         for i in range(len(md)):
             labels = md[var].iloc[i]
@@ -196,48 +197,70 @@ def global_emb():
                 label_matrix[i, :] = wv_dict[label]
             global_emb = np.average(label_matrix, axis=0).astype(np.float32)
 
-            # Get closest neighbour of global embedding (vs get predicted based label?)
+            # Get closest neighbour of global embedding = global label + get embedding of global label = global derived
             score, sample = embeddings_ds.get_nearest_examples("embeddings", global_emb, k=1)
             global_label = sample['labels']
+            global_derived = wv_dict[global_label[0]]
 
             global_embs.append(global_emb)
             global_labels.append(global_label)
+            global_deriveds.append(global_derived)
 
         emb_col = 'glb_' + var + '_emb'
         lab_col = 'glb_' + var + '_lab'
+        der_col = 'glb_' + var + '_der'
         new_md[emb_col] = global_embs
         new_md[lab_col] = global_labels
+        new_md[der_col] = global_deriveds
     
     # Save new_df
     with open(f'/scratch/azonneveld/rsa/md_global.pkl', 'wb') as f:
                 pickle.dump(new_md, f)
         
 
-def calc_t2_rdms(): 
-    print("Calculating t2 rdms")
+def calc_t2_rdms(emb_type='global'): 
+    """
+    Emb_type: 'global', 'derived', 'first'
+
+    """
+    print(f"Calculating t2 rdms {emb_type}")
     
     # Load global embeddings df
     with open(f'/scratch/azonneveld/rsa/md_global.pkl', 'rb') as f: 
         md_global = pickle.load(f)
+
+    # Load embeddings
+    with open(f'/scratch/azonneveld/meta-explore/guse_wv_all.pkl', 'rb') as f: 
+        wv_dict = pickle.load(f)
     
     # Calculate RDMS per set per variable
     rdm_zets = {}
+    n_features = 512
+
     for zet in zets:
 
         rdm_vars = {}
+        zet_md = md_global[md_global['set']==zet]
+        n_stimuli = len(zet_md)
+
         for var in vars:
 
-            var_gl_emb = 'glb_' + var +'_emb'
-            var_gl_lab = 'glb_' + var +'_lab'
-
-            c_md = md_global[md_global['set']==zet][var_gl_emb]
-
-            n_features = c_md.iloc[0].shape[0]
-            n_stimuli = len(c_md)
-            
             f_matrix = np.zeros((n_stimuli, n_features))
-            for k in range(n_stimuli):
-                f_matrix[k, :] = c_md.iloc[k]
+
+            if emb_type == 'global':
+                var_emb = 'glb_' + var +'_emb'
+                var_lab = 'glb_' + var +'_lab'
+            elif emb_type == 'derived':
+                var_emb = 'glb_' + var +'_der'
+                var_lab = 'glb_' + var +'_lab'
+            
+            if emb_type != 'first':
+                for k in range(n_stimuli):
+                    f_matrix[k, :] = zet_md[var_emb].iloc[k]
+            else:
+                for k in range(n_stimuli):
+                    label = zet_md[var].iloc[k][0]
+                    f_matrix[k, :] = wv_dict[label]
 
             rdm = pairwise_distances(f_matrix, metric=metric)
             rdm_vars[var] = rdm
@@ -245,14 +268,28 @@ def calc_t2_rdms():
         rdm_zets[zet] = rdm_vars
     
     # Save rdms
-    with open(f'/scratch/azonneveld/rsa/rdm_t2_guse.pkl', 'wb') as f:
+    if emb_type == 'global':
+        file_name = 'rdm_t2_guse_glb.pkl'
+    elif emb_type == 'derived':
+        file_name = 'rdm_t2_guse_der.pkl'
+    elif emb_type == 'first':
+        file_name = 'rdm_t2_guse_first.pkl'
+    
+    with open(f'/scratch/azonneveld/rsa/{file_name}.pkl', 'wb') as f:
                 pickle.dump(rdm_zets, f)
 
-def plot_t2_rdms():
-    print("Plotting t2 rdms")
+def plot_t2_rdms(emb_type='global'):
+    print(f"Plotting t2 rdms {emb_type}")
 
     # Load rdms
-    with open(f'/scratch/azonneveld/rsa/rdm_t2_guse.pkl', 'rb') as f: 
+    if emb_type == 'global':
+        file_name = 'rdm_t2_guse_glb.pkl'
+    elif emb_type == 'derived':
+        file_name = 'rdm_t2_guse_der.pkl'
+    elif emb_type == 'first':
+        file_name = 'rdm_t2_guse_first.pkl'
+
+    with open(f'/scratch/azonneveld/rsa/{file_name}.pkl', 'rb') as f: 
         rdms = pickle.load(f)
 
     # Get max and min of all rdms 
@@ -273,7 +310,7 @@ def plot_t2_rdms():
 
     # Create plots
     fig, ax = plt.subplots(2,3, dpi = 500)
-    fig.suptitle(f'Type 2 GUSE RDMs')
+    fig.suptitle(f'Type 2 GUSE RDMs {emb_type}')
 
     for j in range(len(zets)):
         zet = zets[j]
@@ -292,45 +329,45 @@ def plot_t2_rdms():
     cbar = fig.colorbar(im, ax=ax.ravel().tolist())
     cbar.ax.set_ylabel(f'{metric} distance', fontsize=12)
 
-    img_path = res_folder + f'/global_guse_rdms.png'
+    img_path = res_folder + f'/rdm_t2_guse_{emb_type}.png'
     plt.savefig(img_path)
     plt.clf()
 
 
-def rdm_t2_sim():
-    print("Calculating t2 rdm similarity")
+# def rdm_t2_sim():
+#     print("Calculating t2 rdm similarity")
 
-    # Load rdms
-    with open(f'/scratch/azonneveld/rsa/rdm_t2_guse.pkl', 'rb') as f: 
-        rdms = pickle.load(f)
+#     # Load rdms
+#     with open(f'/scratch/azonneveld/rsa/rdm_t2_guse.pkl', 'rb') as f: 
+#         rdms = pickle.load(f)
 
-    fig, ax = plt.subplots(1, 2, dpi = 300)
-    fig.suptitle(f'Pairwise correlation Type 2 GUSE RDMs')
+#     fig, ax = plt.subplots(1, 2, dpi = 300)
+#     fig.suptitle(f'Pairwise correlation Type 2 GUSE RDMs')
 
-    for j in range(len(zets)):
-        zet = zets[j]
+#     for j in range(len(zets)):
+#         zet = zets[j]
 
-        df = pd.DataFrame()
-        for i in range(len(vars)):
-            var = vars[i]
-            rdm = squareform(rdms[zet][var].round(5))
-            df[var] = rdm
+#         df = pd.DataFrame()
+#         for i in range(len(vars)):
+#             var = vars[i]
+#             rdm = squareform(rdms[zet][var].round(5))
+#             df[var] = rdm
 
-        im = ax[j].imshow(df.corr(), vmin=0, vmax=0.3)
-        # im = sns.heatmap(df.corr(), vmin=-0.5, vmax=1, ax=ax[j,i], square=True, cbar=False, cmap='viridis', annot=True)
-        ax[j].set_xticks([0,1,2]) 
-        ax[j].set_xticklabels(vars, fontsize=5)
-        ax[j].set_yticks([0,1,2]) 
-        ax[j].set_yticklabels(vars, fontsize=5)
-        ax[j].set_title(f'{zet}', fontsize=7)
+#         im = ax[j].imshow(df.corr(), vmin=0, vmax=0.3)
+#         # im = sns.heatmap(df.corr(), vmin=-0.5, vmax=1, ax=ax[j,i], square=True, cbar=False, cmap='viridis', annot=True)
+#         ax[j].set_xticks([0,1,2]) 
+#         ax[j].set_xticklabels(vars, fontsize=5)
+#         ax[j].set_yticks([0,1,2]) 
+#         ax[j].set_yticklabels(vars, fontsize=5)
+#         ax[j].set_title(f'{zet}', fontsize=7)
 
-    fig.tight_layout()
-    cbar = fig.colorbar(im, ax=ax.ravel().tolist())
-    cbar.ax.set_ylabel(f'Pearson correlation', fontsize=12)
+#     fig.tight_layout()
+#     cbar = fig.colorbar(im, ax=ax.ravel().tolist())
+#     cbar.ax.set_ylabel(f'Pearson correlation', fontsize=12)
 
-    img_path = res_folder + f'/rdm_guse_t2_cors.png'
-    plt.savefig(img_path)
-    plt.clf()
+#     img_path = res_folder + f'/rdm_guse_t2_cors.png'
+#     plt.savefig(img_path)
+#     plt.clf()
 
 
 #  --------------  MAIN
@@ -339,9 +376,20 @@ def rdm_t2_sim():
 # plot_t1_rdms()
 # rdm_model_sim()
 
-# Type 2 RDM analysi
+# Type 2 RDM analysis
 # global_emb()
-# calc_t2_rdms()
-# plot_t2_rdms()
-rdm_t2_sim()
+# calc_t2_rdms('global')
+# calc_t2_rdms('derived')
+# calc_t2_rdms('first')
+plot_t2_rdms('global')
+plot_t2_rdms('derived')
+plot_t2_rdms('first')
+# rdm_t2_sim()
+
+
+# test
+# md_cols_oi = ['objects', 'glb_objects_lab'] 
+# md_cols_oi = ['scenes', 'glb_scenes_lab'] 
+# md_cols_oi = ['actions', 'glb_actions_lab']
+# md_select = md_global[md_cols_oi]
 
