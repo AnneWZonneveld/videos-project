@@ -236,11 +236,13 @@ def calc_t2_rdms(emb_type='global', sort=False):
     
     # Calculate RDMS per set per variable
     rdm_zets = {}
+    fm_zets = {}
     n_features = 512
 
     for zet in zets:
 
         rdm_vars = {}
+        fm_vars = {}
         zet_md = md_global[md_global['set']==zet]
         n_stimuli = len(zet_md)
 
@@ -270,23 +272,30 @@ def calc_t2_rdms(emb_type='global', sort=False):
 
             rdm = pairwise_distances(f_matrix, metric=metric)
             rdm_vars[var] = rdm
+            fm_vars[var] = f_matrix
 
         rdm_zets[zet] = rdm_vars
+        fm_zets[zet] = fm_vars
     
     # Save rdms
     if emb_type == 'global':
-        file_name = 'rdm_t2_guse_glb.pkl'
+        file_name = 'guse_glb.pkl'
     elif emb_type == 'derived':
-        file_name = 'rdm_t2_guse_der.pkl'
+        file_name = 'guse_der.pkl'
     elif emb_type == 'first':
-        file_name = 'rdm_t2_guse_first.pkl'
+        file_name = 'guse_first.pkl'
     
     if sort == True:
-        with open(f'/scratch/azonneveld/rsa/{file_name}_sorted', 'wb') as f:
+        with open(f'/scratch/azonneveld/rsa/rdm_t2_{file_name}_sorted', 'wb') as f:
                     pickle.dump(rdm_zets, f)
     else:
-        with open(f'/scratch/azonneveld/rsa/{file_name}', 'wb') as f:
+        with open(f'/scratch/azonneveld/rsa/rdm_t2_{file_name}', 'wb') as f:
             pickle.dump(rdm_zets, f)
+    
+    # Save feature matrices
+    with open(f'/scratch/azonneveld/rsa/feature_m_{file_name}', 'wb') as f:
+        pickle.dump(fm_zets, f)
+    
 
 def plot_t2_rdms(emb_type='global', sort=False):
     print(f"Plotting t2 rdms {emb_type}")
@@ -401,6 +410,85 @@ def rdm_t2_emb_type_sim():
     plt.clf()
 
 
+# ------------- RDM type 3 (cluster based)
+# Load clusters
+
+def rdm_type3():
+    
+    # Load global embeddings df
+    with open(f'/scratch/azonneveld/rsa/md_global.pkl', 'rb') as f: 
+        md_global = pickle.load(f)
+
+    # Select only train set
+    zet = 'train'
+    md_select = md_global[md_global['set']==zet]
+    n_stimuli = len(md_select)
+    vars_oi = ['scenes', 'actions']
+    k = 40
+
+    centroid_matrices = {}
+    rdms = {}
+
+    for var in vars_oi:
+
+        # Load cluster data
+        with open(f'/scratch/azonneveld/clustering/kmean_k{k}_train_{var}.pkl', 'rb') as f: 
+            clusters = pickle.load(f)
+
+        centroids = []
+        centroid_matrix = np.zeros((n_stimuli, centroid.shape[0]))
+
+        for i in range(n_stimuli):
+            clus_label = cluster_labels[i]
+            centroid = clusters.cluster_centers_[clus_label, :]
+            centroids.append(centroid)
+            centroid_matrix[i, :] = centroid
+        
+        col_1 = var + '_clust'
+        col_2 = var + '_centroid'
+        md_select[col_1] = cluster_labels
+        md_select[col_2] = centroids
+
+        rdm = pairwise_distances(centroid_matrix, metric='euclidean')
+        rdms[var] = rdm
+        centroid_matrices[var] = centroid_matrix
+    
+
+    # Get max and min of all rdms 
+    maxs = []
+    mins = []
+    for var in vars_oi:
+        rdm = rdms[var]
+        max = np.max(rdm)
+        min = np.max(rdm)
+        maxs.append(max)
+        mins.append(min)
+    max = np.max(np.asarray(maxs))
+    min = np.min(np.asarray(mins))
+
+    # Create plots
+    fig, ax = plt.subplots(1, 2, dpi = 500)
+    fig.suptitle(f'Type 3 higher-order RDMs')
+
+    for i in range(len(vars_oi)):
+        var = vars_oi[i]
+        rdm = rdms[var]
+
+        im = ax[i].imshow(rdm, vmin=0, vmax=max)
+        ax[i].set_title(f'train {var}', fontsize=8)
+        ax[i].set_xlabel("", fontsize=10)
+        ax[i].set_ylabel("", fontsize=10)
+
+    fig.tight_layout()
+    cbar = fig.colorbar(im, ax=ax.ravel().tolist())
+    cbar.ax.set_ylabel(f'Euclidean distance', fontsize=12)
+
+    img_path = res_folder + f'/rdm_t3.png'
+    plt.savefig(img_path)
+    plt.clf()
+
+
+
 #  --------------  MAIN
 # Type 1 RDM analysis
 # calc_t1_rdms()
@@ -409,22 +497,25 @@ def rdm_t2_emb_type_sim():
 
 # Type 2 RDM analysis
 # global_emb()
-calc_t2_rdms('global', sort=True)
-calc_t2_rdms('derived', sort=True)
+# calc_t2_rdms('global', sort=True)
+# calc_t2_rdms('derived', sort=True)
 calc_t2_rdms('global', sort=False)
-calc_t2_rdms('derived', sort=False)
+# calc_t2_rdms('derived', sort=False)
 # calc_t2_rdms('first')
-plot_t2_rdms('global', sort=True)
-plot_t2_rdms('derived', sort=True)
-plot_t2_rdms('global', sort=False)
-plot_t2_rdms('derived', sort=False)
+# plot_t2_rdms('global', sort=True)
+# plot_t2_rdms('derived', sort=True)
+# plot_t2_rdms('global', sort=False)
+# plot_t2_rdms('derived', sort=False)
 # plot_t2_rdms('first')
 # rdm_t2_emb_type_sim()
+
 
 
 # test
 # md_cols_oi = ['objects', 'glb_objects_lab'] 
 # md_cols_oi = ['scenes', 'glb_scenes_lab'] 
 # md_cols_oi = ['actions', 'glb_actions_lab']
-# md_select = md_global[md_cols_oi]
+# md_select = md_global[md_cols_oi].iloc[120:130]
+
+
 
