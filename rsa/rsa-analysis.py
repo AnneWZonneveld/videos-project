@@ -8,7 +8,7 @@ from IPython import embed as shell
 from sklearn.metrics import pairwise_distances
 from scipy.spatial.distance import squareform
 import tensorflow as tf
-import tensorflow_hub as hub
+# import tensorflow_hub as hub
 from datasets import load_dataset, Dataset, DatasetDict
 from natsort import index_natsorted
 
@@ -413,19 +413,18 @@ def rdm_t2_emb_type_sim():
 # ------------- RDM type 3 (cluster based)
 # Load clusters
 
-def rdm_type3():
+def rdm_type3(k=40, sorted=False):
     
     # Load global embeddings df
     with open(f'/scratch/azonneveld/rsa/md_global.pkl', 'rb') as f: 
         md_global = pickle.load(f)
 
     # Select only train set
-    zet = 'train'
+    zet ='train'
     md_select = md_global[md_global['set']==zet]
     n_stimuli = len(md_select)
     vars_oi = ['scenes', 'actions']
-    k = 40
-
+    
     centroid_matrices = {}
     rdms = {}
 
@@ -435,25 +434,43 @@ def rdm_type3():
         with open(f'/scratch/azonneveld/clustering/kmean_k{k}_train_{var}.pkl', 'rb') as f: 
             clusters = pickle.load(f)
 
+        cluster_labels = clusters.labels_   
         centroids = []
-        centroid_matrix = np.zeros((n_stimuli, centroid.shape[0]))
-
         for i in range(n_stimuli):
             clus_label = cluster_labels[i]
             centroid = clusters.cluster_centers_[clus_label, :]
             centroids.append(centroid)
-            centroid_matrix[i, :] = centroid
         
         col_1 = var + '_clust'
         col_2 = var + '_centroid'
         md_select[col_1] = cluster_labels
         md_select[col_2] = centroids
 
+        n_features = centroid.shape[0]          
+        centroid_matrix = np.zeros((n_stimuli, n_features))
+
+        if sorted == True:
+            sort_col1 = col_1
+            sort_col2 = 'glb_' + var + '_lab'
+            md_select = md_select.sort_values(by=[sort_col1, sort_col2],
+                    )
+            
+        for i in range(n_stimuli):
+            centroid = md_select[col_2].iloc[i]
+            centroid_matrix[i, :] = centroid
+        
         rdm = pairwise_distances(centroid_matrix, metric='euclidean')
         rdms[var] = rdm
         centroid_matrices[var] = centroid_matrix
-    
 
+    if sorted == True:
+        with open(f'/scratch/azonneveld/rsa/rdm_t3_sorted', 'wb') as f:
+                    pickle.dump(rdms, f)
+    else:
+        with open(f'/scratch/azonneveld/rsa/rdm_t3', 'wb') as f:
+            pickle.dump(rdms, f)
+
+        
     # Get max and min of all rdms 
     maxs = []
     mins = []
@@ -468,13 +485,13 @@ def rdm_type3():
 
     # Create plots
     fig, ax = plt.subplots(1, 2, dpi = 500)
-    fig.suptitle(f'Type 3 higher-order RDMs')
+    fig.suptitle(f'Type 3 higher-order RDMs, sorted={sorted}')
 
     for i in range(len(vars_oi)):
         var = vars_oi[i]
         rdm = rdms[var]
-
-        im = ax[i].imshow(rdm, vmin=0, vmax=max)
+ 
+        im = ax[i].imshow(rdm, vmin=0, vmax=1.4) #vmax = 1.4 to compare with basic-order
         ax[i].set_title(f'train {var}', fontsize=8)
         ax[i].set_xlabel("", fontsize=10)
         ax[i].set_ylabel("", fontsize=10)
@@ -483,7 +500,10 @@ def rdm_type3():
     cbar = fig.colorbar(im, ax=ax.ravel().tolist())
     cbar.ax.set_ylabel(f'Euclidean distance', fontsize=12)
 
-    img_path = res_folder + f'/rdm_t3.png'
+    if sorted == True:
+        img_path = res_folder + f'/rdm_t3_sorted.png'
+    else:
+        img_path = res_folder + f'/rdm_t3.png'
     plt.savefig(img_path)
     plt.clf()
 
