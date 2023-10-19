@@ -108,9 +108,11 @@ def elbow_plot(fms, zet, var, clus_range = range(5, 10), its = 5, c_type='kmean'
 
         high_score = 0
         all_scores = []
-        all_thres = []
-
+        
         if cb == False:
+
+            all_thres = []
+            all_ks = []
 
             for thres in clus_range:
 
@@ -121,6 +123,7 @@ def elbow_plot(fms, zet, var, clus_range = range(5, 10), its = 5, c_type='kmean'
                 score = silhouette_score(fms[zet][var], fit.labels_, metric='euclidean')
                 all_scores.append(score)
                 all_thres.append(thres)
+                all_ks.append(fit.n_clusters_)
 
                 if score > high_score:
                     best_fit = fit
@@ -129,14 +132,30 @@ def elbow_plot(fms, zet, var, clus_range = range(5, 10), its = 5, c_type='kmean'
             elbow_df = pd.DataFrame()
             elbow_df['thres'] = all_thres
             elbow_df['score'] = all_scores
+            elbow_df['k'] = all_ks
 
-            fig, ax = plt.subplots(1,1)
-            sns.lineplot(x='thres', y='score', data=elbow_df)
-            ax.set_ylabel('Silhouette score')
-            ax.set_xlabel('Distance threshold')
-            ax.set_title(f'Hierach {zet} {var}')
+
+            fig, ax1 = plt.subplots()
+            ax2 = ax1.twinx()
+            sns.lineplot(x='thres', y='score', data=elbow_df, color='blue', ax=ax1)
+            ax1.set_ylabel('Silhouette score')
+            ax1.set_xlabel('Distance threshold')
+            ax1.set_title(f'Hierach {zet} {var} {linkage}')
+            sns.lineplot(x='thres', y='k', data=elbow_df, color='red', ax=ax2)
+            ax2.set_ylabel('K')
+
+            if var == 'actions':
+                line_val = 179
+            elif var == 'scenes':
+                line_val = 189
+            ax2.hline(y=line_val, color='black')
+
             fig.tight_layout()
+            img_path = res_folder + f'/hierarch_elbow_{zet}_{var}_{linkage}_thres.png'
+
         else:
+
+            all_ks = []
 
             for k in clus_range:
 
@@ -146,14 +165,14 @@ def elbow_plot(fms, zet, var, clus_range = range(5, 10), its = 5, c_type='kmean'
                 fit = ex_hierarch(fms=fms, zet=zet, var=var, n_clusters=k, linkage=linkage)
                 score = silhouette_score(fms[zet][var], fit.labels_, metric='euclidean')
                 all_scores.append(score)
-                all_thres.append(k)
+                all_ks.append(k)
 
                 if score > high_score:
                     best_fit = fit
                     high_score = score
             
             elbow_df = pd.DataFrame()
-            elbow_df['k'] = all_thres
+            elbow_df['k'] = all_ks
             elbow_df['score'] = all_scores
 
             fig, ax = plt.subplots(1,1)
@@ -162,26 +181,32 @@ def elbow_plot(fms, zet, var, clus_range = range(5, 10), its = 5, c_type='kmean'
             ax.set_xlabel('K')
             ax.set_title(f'Hierach {zet} {var}')
             fig.tight_layout()
+            img_path = res_folder + f'/hierarch_elbow_{zet}_{var}_{linkage}.png'
 
 
-        img_path = res_folder + f'/hierarch_elbow_{zet}_{var}.png'
         plt.savefig(img_path)
         plt.clf()
 
     # Save best fit
-    with open(f'/scratch/azonneveld/clustering/{c_type}_bf_{zet}_{var}_{linkage}.pkl', 'wb') as f:
+    if c_type == 'hierarch':
+        linkage = "_" + linkage
+    with open(f'/scratch/azonneveld/clustering/{c_type}_bf_{zet}_{var}{linkage}.pkl', 'wb') as f:
         pickle.dump(best_fit, f)
 
-def visual_inspect(zet, var, mds=True, count=True, k='bf', ctype='kmean'):
+def visual_inspect(zet, var, mds=True, count=True, k='bf', ctype='kmean', linkage=''):
 
     # Load fit
+    if ctype == 'hierarch':
+        linkage = "_" + linkage
+
     if k=='bf':
-        with open(f'/scratch/azonneveld/clustering/{ctype}_bf_{zet}_{var}.pkl', 'rb') as f: 
+        with open(f'/scratch/azonneveld/clustering/{ctype}_bf_{zet}_{var}{linkage}.pkl', 'rb') as f: 
             fit = pickle.load(f)
     else:
-        with open(f'/scratch/azonneveld/clustering/{ctype}_k{k}_{zet}_{var}.pkl', 'rb') as f: 
+        with open(f'/scratch/azonneveld/clustering/{ctype}_k{k}_{zet}_{var}{linkage}.pkl', 'rb') as f: 
             fit = pickle.load(f)
 
+    
     # Only select relevant meta data
     md_select = md[md['set']==zet] 
     der_col = 'glb_' + var + '_lab'
@@ -196,15 +221,16 @@ def visual_inspect(zet, var, mds=True, count=True, k='bf', ctype='kmean'):
         mds_df['words'] = md_select[der_col].reset_index(drop=True)
         mds_df['clust'] = fit.labels_
 
-        mds_plot = bp.figure(plot_width=500, plot_height=400, title=f"{ctype} {zet} {var} k={k} ",
+        mds_plot = bp.figure(plot_width=500, plot_height=400, title=f"{ctype}{linkage} {zet} {var} k={k} ",
         tools="pan,wheel_zoom,box_zoom,reset,hover",
         x_axis_type=None, y_axis_type=None, min_border=1)
         color_mapper = LinearColorMapper(palette='Turbo256', low=min(mds_df['clust']), high=max(mds_df['clust']))
         mds_plot.scatter(x='x', y='y', source=mds_df, color={'field': 'clust', 'transform': color_mapper})
         hover = mds_plot.select(dict(type=HoverTool))
-        hover.tooltips={"word": "@words"}
+        hover.tooltips={"word": "@words",
+                        "clust": "@clust"}
 
-        bp.output_file(filename=f"/scratch/azonneveld/clustering/plots/{ctype}_mds_{zet}_{var}_k{k}.html", title="mds-overview")
+        bp.output_file(filename=f"/scratch/azonneveld/clustering/plots/{ctype}_mds_{zet}_{var}_k{k}_{linkage}.html", title="mds-overview")
         bp.save(mds_plot)
 
     # Cluster count plot
@@ -229,12 +255,12 @@ def visual_inspect(zet, var, mds=True, count=True, k='bf', ctype='kmean'):
 
         fig, ax = plt.subplots(1,1)
         df['cluster'].value_counts().plot(kind="bar")
-        ax.set_title(f'{ctype} {zet} {var}, k={k}', size=10)
+        ax.set_title(f'{ctype}{linkage} {zet} {var}, k={k}', size=10)
         ax.set_xticks([])
         ax.set_ylabel('Count')
         ax.set_xlabel('Clusters')
         fig.tight_layout()
-        img_path = res_folder + f'/{ctype}_count_{zet}_{var}_k{k}.png'
+        img_path = res_folder + f'/{ctype}_count_{zet}_{var}_k{k}_{linkage}.png'
         plt.savefig(img_path)
         plt.clf()
 
@@ -259,29 +285,26 @@ def cluster_content(fit, zet, var):
     
     return clust_dict
 
+def clus_size_dist():
+    pass
 
-def sample_ks(zet, var, clus_range, ctype='kmean'):
 
-    if ctype == 'kmean':
+def sample_ks(zet, var, clus_range, ctype='kmean', linkage=''):
 
-        for k in clus_range:
 
+    for k in clus_range:
+
+        if ctype == 'kmean':
             fit = ex_kmeans(fms, zet=zet, var=var, n_clusters=k)
-            with open(f'/scratch/azonneveld/clustering/kmean_k{k}_{zet}_{var}.pkl', 'wb') as f:
-                pickle.dump(fit, f)
+            link_label = linkage
+        elif ctype == 'hierarch':  
+            fit = ex_hierarch(fms, zet=zet, var=var, n_clusters=k, linkage=linkage)
+            link_label  = '_' + linkage
 
-            visual_inspect(zet=zet, var=var, k=k, ctype=ctype)
-            #  clustr_contents(fit=fit, zet=zet, var=var)
-
-    elif ctype == 'hierarch':
+        with open(f'/scratch/azonneveld/clustering/{ctype}_k{k}_{zet}_{var}{link_label}.pkl', 'wb') as f:
+            pickle.dump(fit, f)
         
-        for k in clus_range:
-
-            fit = ex_hierarch(fms, zet=zet, var=var, n_clusters=k)
-            with open(f'/scratch/azonneveld/clustering/hierarch_k{k}_{zet}_{var}.pkl', 'wb') as f:
-                pickle.dump(fit, f)
-
-            visual_inspect(zet=zet, var=var, k=k, ctype=ctype)
+        visual_inspect(zet=zet, var=var, k=k, ctype=ctype, linkage=linkage)
 
 
 def plot_dendogram(zet, var, linkage, p=60, k='bf', **kwargs):
@@ -311,6 +334,9 @@ def plot_dendogram(zet, var, linkage, p=60, k='bf', **kwargs):
         [fit.children_, fit.distances_, counts]
     ).astype(float)
 
+    c, coph_dists = cophenet(linkage_matrix, pdist(fms[zet][var]))
+
+
     # Plot the corresponding dendrogram
     fig, ax = plt.subplots(1,1, dpi=300)
     dendrogram(linkage_matrix,     
@@ -319,15 +345,10 @@ def plot_dendogram(zet, var, linkage, p=60, k='bf', **kwargs):
                show_leaf_counts=True, 
                show_contracted=True,   
                 **kwargs)
-
-    try:
-        ax.set_title(f'{zet} {var} {linkage}, thres={round(fit.distance_threshold, 3)}, k={k}')
-    except: 
-        ax.set_title(f'{zet} {var} {linkage}, k={k}')
-
+    ax.set_title(f'{zet} {var} {linkage}, coph_c={c}')
     ax.set_ylabel('Distance')
     fig.tight_layout()
-    img_path = res_folder + f'/dendogram_{zet}_{var}_k{k}.png'
+    img_path = res_folder + f'/dendogram_{zet}_{var}_{linkage}.png'
     plt.savefig(img_path)
     plt.clf()
     
@@ -343,17 +364,19 @@ with open(f'/scratch/azonneveld/rsa/fm_guse_glb.pkl', 'rb') as f:
 # elbow_plot(fms, zet='train', var='scenes', clus_range=range(2, 200), its=10, ctype='kmeans')
 # elbow_plot(fms, zet='train', var='objects', clus_range=range(2, 200), its=3, ctype='kmeans')
 
-# visual_inspect(zet='train', var='actions', k='bf')
-# visual_inspect(zet='train', var='objects', k='bf')
-# visual_inspect(zet='train', var='scenes', k='bf')
+# visual_inspect(zet='train', var='actions', k=40, ctype='kmean')
+# visual_inspect(zet='train', var='actions', k=40, ctype='hierarch')
 
 # Sample different k's
 # sample_ks(zet='train', var='actions', clus_range=[20, 30, 40, 50, 60], ctype='kmean')
 # sample_ks(zet='train', var='scenes', clus_range=[20, 30, 40, 50, 60], ctype='kmean')
 
 # Hierarchical
-# elbow_plot(fms, zet='train', var='scenes', clus_range=np.arange(0.1, 2, 0.01), c_type='hierarch', linkage='ward', cb=False)  #threshold
+elbow_plot(fms, zet='train', var='scenes', clus_range=np.arange(0.1, 2, 0.01), c_type='hierarch', linkage='ward', cb=False)  #threshold
 # elbow_plot(fms, zet='train', var='scenes', clus_range=np.arange(0.1, 2, 0.01), c_type='hierarch', linkage='average', cb=False) # threshold
+# elbow_plot(fms, zet='train', var='scenes', clus_range=np.arange(0.1, 2, 0.01), c_type='hierarch', linkage='single', cb=False)  #threshold
+# elbow_plot(fms, zet='train', var='scenes', clus_range=np.arange(0.1, 2, 0.01), c_type='hierarch', linkage='complete, cb=False) # threshold
+
 # elbow_plot(fms, zet='train', var='scenes', clus_range=range(2, 200), c_type='hierarch', linkage='ward', cb=True) #cluster
 # elbow_plot(fms, zet='train', var='actions', clus_range=range(2, 200), c_type='hierarch', linkage='ward', cb=True) #cluster
 
@@ -362,11 +385,8 @@ with open(f'/scratch/azonneveld/rsa/fm_guse_glb.pkl', 'rb') as f:
 # sample_ks(zet='train', var='scenes', clus_range=[20, 30, 40, 50, 60], ctype='hierarch')
 
 # Plot dendogram
-linkage_matrix = plot_dendogram(zet='train', var='actions', linkage='ward', k=40)
-c, coph_dists = cophenet(linkage_matrix, pdist(fms['train']['actions']))
+# linkage_matrix = plot_dendogram(zet='train', var='actions', linkage='ward', k=40)
 
-linkage_matrix = plot_dendogram(zet='train', var='scenes', linkage='ward', k=50)
-c, coph_dists = cophenet(linkage_matrix, pdist(fms['train']['scenes']))
 
 
 # # Manually cut tree
