@@ -48,6 +48,7 @@ def elbow_plot(fms, zet, var, clus_range = range(5, 10), its = 5, c_type='kmean'
         all_ks = []
         all_its = []
         all_av_cors = []
+        all_fits = []
 
         for k in clus_range:
 
@@ -59,6 +60,7 @@ def elbow_plot(fms, zet, var, clus_range = range(5, 10), its = 5, c_type='kmean'
 
                 r_state = r_states[i]
                 fit = ex_kmeans(fms, zet=zet, var=var, n_clusters=k, r_state=r_state)
+                all_fits.append(fit)
                 score = silhouette_score(fms[zet][var], fit.labels_, metric='euclidean')
                 all_scores.append(score)
                 all_ks.append(k)
@@ -108,6 +110,7 @@ def elbow_plot(fms, zet, var, clus_range = range(5, 10), its = 5, c_type='kmean'
 
         high_score = 0
         all_scores = []
+        all_fits = []
         
         if cb == False:
 
@@ -120,6 +123,7 @@ def elbow_plot(fms, zet, var, clus_range = range(5, 10), its = 5, c_type='kmean'
             
                 df = pd.DataFrame()
                 fit = ex_hierarch(fms=fms, zet=zet, var=var, thres=thres, linkage=linkage)
+                all_fits.append(fit)
                 score = silhouette_score(fms[zet][var], fit.labels_, metric='euclidean')
                 all_scores.append(score)
                 all_thres.append(thres)
@@ -136,19 +140,20 @@ def elbow_plot(fms, zet, var, clus_range = range(5, 10), its = 5, c_type='kmean'
 
 
             fig, ax1 = plt.subplots()
-            ax2 = ax1.twinx()
             sns.lineplot(x='thres', y='score', data=elbow_df, color='blue', ax=ax1)
             ax1.set_ylabel('Silhouette score')
             ax1.set_xlabel('Distance threshold')
             ax1.set_title(f'Hierach {zet} {var} {linkage}')
+            ax2 = ax1.twinx()
             sns.lineplot(x='thres', y='k', data=elbow_df, color='red', ax=ax2)
             ax2.set_ylabel('K')
-
             if var == 'actions':
                 line_val = 179
             elif var == 'scenes':
                 line_val = 189
-            ax2.hline(y=line_val, color='black')
+            plt.axhline(y=line_val, color='black', label=f'n of unique labels ({line_val})')
+            best_thres = best_fit.distance_threshold
+            plt.axvline(x=best_thres, color='orange', label=f'optimal threshold ({round(best_thres, 2)})')
 
             fig.tight_layout()
             img_path = res_folder + f'/hierarch_elbow_{zet}_{var}_{linkage}_thres.png'
@@ -163,6 +168,7 @@ def elbow_plot(fms, zet, var, clus_range = range(5, 10), its = 5, c_type='kmean'
             
                 df = pd.DataFrame()
                 fit = ex_hierarch(fms=fms, zet=zet, var=var, n_clusters=k, linkage=linkage)
+                all_fits.append(fit)
                 score = silhouette_score(fms[zet][var], fit.labels_, metric='euclidean')
                 all_scores.append(score)
                 all_ks.append(k)
@@ -192,6 +198,75 @@ def elbow_plot(fms, zet, var, clus_range = range(5, 10), its = 5, c_type='kmean'
         linkage = "_" + linkage
     with open(f'/scratch/azonneveld/clustering/{c_type}_bf_{zet}_{var}{linkage}.pkl', 'wb') as f:
         pickle.dump(best_fit, f)
+    
+    # Save all fits
+    with open(f'/scratch/azonneveld/clustering/{c_type}_all_{zet}_{var}{linkage}.pkl', 'wb') as f:
+        pickle.dump(all_fits, f)
+
+def fits_variation_plot(zet, var, c_type, linkage, var_type='median'):
+
+    if c_type == 'hierarch':
+        linkage = "_" + linkage
+    with open(f'/scratch/azonneveld/clustering/{c_type}_all_{zet}_{var}{linkage}.pkl', 'rb') as f:
+        all_fits = pickle.load(f)
+    
+    all_means = []
+    all_sds = []
+    all_thres = []
+    all_q3 = []
+    all_q2 = []
+    all_q1 = []
+    for fit in all_fits:
+        labels =  fit.labels_
+        values, counts = np.unique(labels, return_counts=True)
+        mean = np.mean(counts)
+        sd = np.std(counts)
+        thres = fit.distance_threshold
+        q3, q2, q1 = np.percentile(counts, [75, 50, 25])
+        all_q3.append(q3)
+        all_q2.append(q2)
+        all_q1.append(q1)
+        all_means.append(mean)
+        all_sds.append(sd)
+        all_thres.append(thres)
+
+    size_df = pd.DataFrame()
+    size_df['mean'] = all_means
+    size_df['q2'] = all_q2
+    size_df['sd'] = all_sds
+    size_df['thres'] = all_thres
+    upper = np.asarray(all_means) + np.asarray(all_sds)
+    lower = np.asarray(all_means) -  np.asarray(all_sds)
+    all_thres = np.asarray(all_thres)
+    all_q3 = np.asarray(all_q3)
+    all_q1 = np.asarray(all_q1)
+
+    if var_type == 'median':
+        fig, ax1 = plt.subplots(dpi=300)
+        sns.lineplot(x='thres', y='q2', data=size_df, color='blue', ax=ax1)
+        ax1.set_ylabel('Cluster size')
+        ax1.set_xlabel('Distance threshold')
+        ax1.set_title(f'IQR size {ctype} {zet} {var} {linkage}')
+        plt.fill_between(all_thres, all_q1, all_q3, alpha=.3)
+
+        fig.tight_layout()
+        img_path = res_folder + f'/{ctype}_size_{zet}_{var}_{linkage}_thres.png'
+        plt.savefig(img_path)
+        plt.clf()
+
+    elif var_type == 'mean':
+        fig, ax1 = plt.subplots(dpi=300)
+        sns.lineplot(x='thres', y='mean', data=size_df, color='blue', ax=ax1)
+        ax1.set_ylabel('Cluster size')
+        ax1.set_xlabel('Distance threshold')
+        ax1.set_title(f'Mean size {ctype} {zet} {var} {linkage}')
+        plt.fill_between(all_thres, lower, upper, alpha=.3)
+
+        fig.tight_layout()
+        img_path = res_folder + f'/{ctype}_size_{zet}_{var}_{linkage}_thres.png'
+        plt.savefig(img_path)
+        plt.clf()
+
 
 def visual_inspect(zet, var, mds=True, count=True, k='bf', ctype='kmean', linkage=''):
 
@@ -373,12 +448,16 @@ with open(f'/scratch/azonneveld/rsa/fm_guse_glb.pkl', 'rb') as f:
 
 # Hierarchical
 elbow_plot(fms, zet='train', var='scenes', clus_range=np.arange(0.1, 2, 0.01), c_type='hierarch', linkage='ward', cb=False)  #threshold
-# elbow_plot(fms, zet='train', var='scenes', clus_range=np.arange(0.1, 2, 0.01), c_type='hierarch', linkage='average', cb=False) # threshold
-# elbow_plot(fms, zet='train', var='scenes', clus_range=np.arange(0.1, 2, 0.01), c_type='hierarch', linkage='single', cb=False)  #threshold
-# elbow_plot(fms, zet='train', var='scenes', clus_range=np.arange(0.1, 2, 0.01), c_type='hierarch', linkage='complete, cb=False) # threshold
+# elbow_plot(fms, zet='train', var='scenes', clus_range=np.arange(0.1, 1.08, 0.01), c_type='hierarch', linkage='average', cb=False) # threshold
+# elbow_plot(fms, zet='train', var='scenes', clus_range=np.arange(0.1, 0.75, 0.01), c_type='hierarch', linkage='single', cb=False)  #threshold
+# elbow_plot(fms, zet='train', var='scenes', clus_range=np.arange(0.1, 0.8, 0.01), c_type='hierarch', linkage='complete', cb=False) # threshold
 
-# elbow_plot(fms, zet='train', var='scenes', clus_range=range(2, 200), c_type='hierarch', linkage='ward', cb=True) #cluster
-# elbow_plot(fms, zet='train', var='actions', clus_range=range(2, 200), c_type='hierarch', linkage='ward', cb=True) #cluster
+# elbow_plot(fms, zet='train', var='actions', clus_range=np.arange(0.1, 2, 0.01), c_type='hierarch', linkage='ward', cb=False)  #threshold
+# elbow_plot(fms, zet='train', var='actions', clus_range=np.arange(0.1, 1.08, 0.01), c_type='hierarch', linkage='average', cb=False) # threshold
+# elbow_plot(fms, zet='train', var='actions', clus_range=np.arange(0.1, 0.75, 0.01), c_type='hierarch', linkage='single', cb=False)  #threshold
+# elbow_plot(fms, zet='train', var='actions', clus_range=np.arange(0.1, 0.8, 0.01), c_type='hierarch', linkage='complete', cb=False) # threshold
+
+# fits_variation_plot(zet='train', var='scenes', ctype='hierarch', linkage='ward')
 
 # Sample different k's
 # sample_ks(zet='train', var='actions', clus_range=[20, 30, 40, 50, 60], ctype='hierarch')
@@ -388,7 +467,7 @@ elbow_plot(fms, zet='train', var='scenes', clus_range=np.arange(0.1, 2, 0.01), c
 # linkage_matrix = plot_dendogram(zet='train', var='actions', linkage='ward', k=40)
 
 
-
-# # Manually cut tree
+# Manually cut tree
+# full_tree = ex_hierarch(fms, zet, var, n_clusters=2, linkage='ward')
 # num_clusters = 7
 # clusters = cut_tree(linkage_matrix, n_clusters=num_clusters).flatten()
