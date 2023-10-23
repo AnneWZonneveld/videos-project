@@ -205,10 +205,14 @@ def elbow_plot(fms, zet, var, clus_range = range(5, 10), its = 5, c_type='kmean'
 
 def fits_variation_plot(zet, var, c_type, linkage, var_type='median'):
 
+    # Load all fits 
     if c_type == 'hierarch':
         linkage = "_" + linkage
     with open(f'/scratch/azonneveld/clustering/{c_type}_all_{zet}_{var}{linkage}.pkl', 'rb') as f:
         all_fits = pickle.load(f)
+    with open(f'/scratch/azonneveld/clustering/{c_type}_bf_{zet}_{var}{linkage}.pkl', 'rb') as f:
+        best_fit = pickle.load(f)
+    
     
     all_means = []
     all_sds = []
@@ -241,16 +245,19 @@ def fits_variation_plot(zet, var, c_type, linkage, var_type='median'):
     all_q3 = np.asarray(all_q3)
     all_q1 = np.asarray(all_q1)
 
+    best_thres = best_fit.distance_threshold
+
     if var_type == 'median':
         fig, ax1 = plt.subplots(dpi=300)
         sns.lineplot(x='thres', y='q2', data=size_df, color='blue', ax=ax1)
         ax1.set_ylabel('Cluster size')
         ax1.set_xlabel('Distance threshold')
-        ax1.set_title(f'IQR size {ctype} {zet} {var} {linkage}')
+        ax1.set_title(f'IQR size {c_type} {zet} {var} {linkage}')
         plt.fill_between(all_thres, all_q1, all_q3, alpha=.3)
+        plt.axvline(x=best_thres, color='orange')
 
         fig.tight_layout()
-        img_path = res_folder + f'/{ctype}_size_{zet}_{var}_{linkage}_thres.png'
+        img_path = res_folder + f'/{c_type}_size_{zet}_{var}_{linkage}_thres.png'
         plt.savefig(img_path)
         plt.clf()
 
@@ -259,11 +266,12 @@ def fits_variation_plot(zet, var, c_type, linkage, var_type='median'):
         sns.lineplot(x='thres', y='mean', data=size_df, color='blue', ax=ax1)
         ax1.set_ylabel('Cluster size')
         ax1.set_xlabel('Distance threshold')
-        ax1.set_title(f'Mean size {ctype} {zet} {var} {linkage}')
+        ax1.set_title(f'Mean size {c_type} {zet} {var} {linkage}')
         plt.fill_between(all_thres, lower, upper, alpha=.3)
+        plt.axvline(x=best_thres, color='orange')
 
         fig.tight_layout()
-        img_path = res_folder + f'/{ctype}_size_{zet}_{var}_{linkage}_thres.png'
+        img_path = res_folder + f'/{c_type}_size_{zet}_{var}_{linkage}_thres.png'
         plt.savefig(img_path)
         plt.clf()
 
@@ -310,22 +318,6 @@ def visual_inspect(zet, var, mds=True, count=True, k='bf', ctype='kmean', linkag
 
     # Cluster count plot
     if count == True:
-        # values, counts = np.unique(best_fit.labels_, return_counts=True)
-        # df = pd.DataFrame()
-        # df['count'] = counts
-        # df['cluster'] = values
-        # df = df.sort_values(by='count', axis=0, ascending=False).reset_index(drop=True)
-
-        # fig, ax = plt.subplots(1,1)
-        # sns.barplot(x='cluster', y='count', data=df, ax=ax, order=[*df.index])
-        # ax.set_title(f'Kmeans {zet} {var}, k={k}', size=10)
-        # ax.set_xticks([])
-
-        # fig.tight_layout()
-        # img_path = res_folder + f'/count_{zet}_{var}_k{k}.png'
-        # plt.savefig(img_path)
-        # plt.clf()
-
         df = pd.DataFrame(fit.labels_, columns=['cluster']).astype('category')
 
         fig, ax = plt.subplots(1,1)
@@ -339,26 +331,52 @@ def visual_inspect(zet, var, mds=True, count=True, k='bf', ctype='kmean', linkag
         plt.savefig(img_path)
         plt.clf()
 
-def cluster_content(fit, zet, var):
+
+def cluster_content(zet, var, linkage, k=2):
+      
+    fit = ex_hierarch(fms=fms, zet=zet, var=var, n_clusters=k, linkage='ward')              
     cluster_labels = fit.labels_.tolist()
+    n_clusters = len(np.unique(cluster_labels))
 
     der_col = 'glb_' + var + '_lab'
     md_select = md[md['set']==zet][der_col].reset_index(drop=True).to_frame(name='label')
     md_select['cluster'] = cluster_labels
 
-    clust_dict = {}
-    for clust in np.unique(cluster_labels):
-        data = md_select[md_select['cluster']==clust]
-        label_unique, label_counts = np.unique(data['label'], return_counts=True)
-        
-        label_data = []
-        for i in range(len(label_unique)):
-            tup = (label_unique[i], label_counts[i])
-            label_data.append(tup)
+    count_df = md_select.groupby(['cluster','label']).size().to_frame(name='count').reset_index()
+    count_df = count_df.sort_values(by=['cluster', 'count'],
+                    )
 
-        clust_dict[clust] = label_data
+    ncols = 5
+    nrows = n_clusters // ncols + (n_clusters % ncols > 0)
+
+    fig = plt.figure(dpi=300, figsize=(22, 16))
+    for i in range(n_clusters):
+        cluster_df = count_df[count_df['cluster']== i]
+        cluster_size = cluster_df['count'].sum() 
+        ax  = plt.subplot(nrows, ncols, i+1)       
+        sns.barplot(data = cluster_df, x='label', y='count', ax = ax)
+        ax.set_xticklabels(ax.get_xticklabels(), rotation=90, size=6)
+        ax.set_xlabel('')
+        ax.set_title(f'cluster {i} ({cluster_size})', size=8)
+    fig.suptitle(f'{linkage}, k={n_clusters}')
+    fig.tight_layout()
+    fig.subplots_adjust(top=0.88)
+    img_path = res_folder + f'/cluster_content/{linkage}_k{k}.png'
+    plt.savefig(img_path)
+    plt.clf()
+
+    # TEst
+    fit = ex_hierarch(fms=fms, zet=zet, var=var, n_clusters=k, linkage='ward') 
+    with open(f'/scratch/azonneveld/meta-explore/guse_wv_all.pkl', 'rb') as f: 
+        wvs = pickle.load(f)
     
-    return clust_dict
+    temp_fm = np.zeros((len(wvs.keys()), 512))
+    for i 
+    
+
+
+
+
 
 def clus_size_dist():
     pass
@@ -447,7 +465,7 @@ with open(f'/scratch/azonneveld/rsa/fm_guse_glb.pkl', 'rb') as f:
 # sample_ks(zet='train', var='scenes', clus_range=[20, 30, 40, 50, 60], ctype='kmean')
 
 # Hierarchical
-elbow_plot(fms, zet='train', var='scenes', clus_range=np.arange(0.1, 2, 0.01), c_type='hierarch', linkage='ward', cb=False)  #threshold
+# elbow_plot(fms, zet='train', var='scenes', clus_range=np.arange(0.1, 2, 0.01), c_type='hierarch', linkage='ward', cb=False)  #threshold
 # elbow_plot(fms, zet='train', var='scenes', clus_range=np.arange(0.1, 1.08, 0.01), c_type='hierarch', linkage='average', cb=False) # threshold
 # elbow_plot(fms, zet='train', var='scenes', clus_range=np.arange(0.1, 0.75, 0.01), c_type='hierarch', linkage='single', cb=False)  #threshold
 # elbow_plot(fms, zet='train', var='scenes', clus_range=np.arange(0.1, 0.8, 0.01), c_type='hierarch', linkage='complete', cb=False) # threshold
@@ -457,7 +475,15 @@ elbow_plot(fms, zet='train', var='scenes', clus_range=np.arange(0.1, 2, 0.01), c
 # elbow_plot(fms, zet='train', var='actions', clus_range=np.arange(0.1, 0.75, 0.01), c_type='hierarch', linkage='single', cb=False)  #threshold
 # elbow_plot(fms, zet='train', var='actions', clus_range=np.arange(0.1, 0.8, 0.01), c_type='hierarch', linkage='complete', cb=False) # threshold
 
-# fits_variation_plot(zet='train', var='scenes', ctype='hierarch', linkage='ward')
+# Asses cluster size variation
+# fits_variation_plot(zet='train', var='scenes', c_type='hierarch', linkage='ward')
+# fits_variation_plot(zet='train', var='scenes', c_type='hierarch', linkage='average')
+# fits_variation_plot(zet='train', var='scenes', c_type='hierarch', linkage='single')
+# fits_variation_plot(zet='train', var='scenes', c_type='hierarch', linkage='complete')
+# fits_variation_plot(zet='train', var='actions', c_type='hierarch', linkage='ward')
+# fits_variation_plot(zet='train', var='actions', c_type='hierarch', linkage='average')
+# fits_variation_plot(zet='train', var='actions', c_type='hierarch', linkage='single')
+# fits_variation_plot(zet='train', var='actions', c_type='hierarch', linkage='complete')
 
 # Sample different k's
 # sample_ks(zet='train', var='actions', clus_range=[20, 30, 40, 50, 60], ctype='hierarch')
@@ -466,8 +492,8 @@ elbow_plot(fms, zet='train', var='scenes', clus_range=np.arange(0.1, 2, 0.01), c
 # Plot dendogram
 # linkage_matrix = plot_dendogram(zet='train', var='actions', linkage='ward', k=40)
 
-
-# Manually cut tree
-# full_tree = ex_hierarch(fms, zet, var, n_clusters=2, linkage='ward')
-# num_clusters = 7
-# clusters = cut_tree(linkage_matrix, n_clusters=num_clusters).flatten()
+# Asses cluster content for different points hierarchy
+ks = 20
+for k in range(2, ks):
+    print(f'Assesing content k={k}')
+    cluster_content(zet='train', var='actions', linkage='ward', k=k)
