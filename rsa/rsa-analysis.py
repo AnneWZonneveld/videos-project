@@ -28,11 +28,13 @@ def calc_t1_rdms():
     rdm_models = {}
 
     for model in models:
+
+        print(f'Model {model}')
         
         # Load embeddings
         with open(f'/scratch/azonneveld/meta-explore/{model}_wv.pkl', 'rb') as f: #maybe change filepath of wv?
             wv_dict = pickle.load(f)
-
+        
         # Calculate rdms
         rdm_zets = {}
         for j in range(len(zets)):
@@ -41,7 +43,7 @@ def calc_t1_rdms():
 
             for i in range(len(vars)):
                 var = vars[i]
-                
+
                 print(f"Creating RDM {zet} {var}")
                 c_dict = wv_dict[zet][var]
                 keys = list(c_dict.keys())
@@ -49,6 +51,7 @@ def calc_t1_rdms():
                 n_labels = len(c_dict.keys())
 
                 f_matrix = np.zeros((n_labels, n_features))
+                
                 for k in range(n_labels):
                     key = keys[k]
                     f_matrix[k, :] = c_dict[key]
@@ -62,13 +65,101 @@ def calc_t1_rdms():
 
     # Save all model rdms
     with open(f'/scratch/azonneveld/rsa/rdm_t1_models.pkl', 'wb') as f:
-                pickle.dump(rdm_models, f)
+                    pickle.dump(rdm_models, f)
+
+def calc_t1_rdm_freq():
+        
+    # Load embeddings
+    with open(f'/scratch/azonneveld/meta-explore/guse_wv.pkl', 'rb') as f: #maybe change filepath of wv?
+        wv_dict = pickle.load(f)
+    
+    # Load frequency data
+    with open('/scratch/azonneveld/meta-explore/freq_data.pkl', 'rb') as f:
+        freq_dict = pickle.load(f)
+
+    # Calculate rdms
+    rdm_zets = {}
+    for j in range(len(zets)):
+        zet = zets[j]
+        rdm_vars = {}
+
+        for i in range(len(vars)):
+            var = vars[i]
+
+            print(f"Creating RDM {zet} {var}")
+            c_dict = wv_dict[zet][var]
+            keys = list(c_dict.keys())
+            n_features = c_dict[keys[0]].shape[0]
+            n_labels = len(c_dict.keys())
+
+            freq_data = freq_dict[zet][var]
+            f_matrix = np.zeros((n_labels, n_features))
+
+            for k in range(n_labels):
+                key = freq_data['label'].iloc[k]
+                f_matrix[k, :] = c_dict[key]
+
+            rdm = pairwise_distances(f_matrix, metric=metric)
+            rdm_vars[var] = rdm
+
+        rdm_zets[zet] = rdm_vars
+    
+    # Save all model rdms
+    with open(f'/scratch/azonneveld/rsa/rdm_t1_guse_sorted.pkl', 'wb') as f:
+                    pickle.dump(rdm_zets, f)
+    
+
+    # Get max and min of all rdms 
+    max_min_dict ={}
+    maxs = []
+    mins = []
+    for zet in zets:
+        for var in vars:
+            rdm = rdm_zets[zet][var]
+            max = np.max(rdm)
+            min = np.max(rdm)
+            maxs.append(max)
+            mins.append(min)
+    max = np.max(np.asarray(maxs))
+    min = np.min(np.asarray(mins))
+    max_min_dict['max'] = max
+    max_min_dict['min'] = min
+
+    # Create plots
+    fig, ax = plt.subplots(2,3, dpi = 500)
+    fig.suptitle(f'Type 1 GUSE RDMs , sorted')
+
+    for j in range(len(zets)):
+        zet = zets[j]
+
+        for i in range(len(vars)):
+            var = vars[i]
+
+            rdm = rdm_zets[zet][var]
+
+            im = ax[j, i].imshow(rdm, vmin=0, vmax=max)
+            ax[j, i].set_title(f'{zet} {var}', fontsize=8)
+            ax[j, i].set_xlabel("", fontsize=10)
+            ax[j, i].set_ylabel("", fontsize=10)
+
+    fig.tight_layout()
+    cbar = fig.colorbar(im, ax=ax.ravel().tolist())
+    cbar.ax.set_ylabel(f'{metric} distance', fontsize=12)
+
+    img_path = res_folder + f'/rdm_t1_guse_sorted.png'
+    plt.savefig(img_path)
+    plt.clf()
+    
 
 def plot_t1_rdms():
 
     # Load rdms
-    with open(f'/scratch/azonneveld/meta-explore/rdm_t1_models.pkl', 'rb') as f: 
-        rdm_models = pickle.load(f)
+    if sorted == 'True':
+        with open(f'/scratch/azonneveld/meta-explore/rdm_t1_models_sorted.pkl', 'rb') as f: 
+            rdm_models = pickle.load(f)
+    else:
+        with open(f'/scratch/azonneveld/meta-explore/rdm_t1_models.pkl', 'rb') as f: 
+            rdm_models = pickle.load(f)
 
     # Get max and min of all rdms per model
     model_ultimates = {}
@@ -93,7 +184,7 @@ def plot_t1_rdms():
     for model in models:
 
         fig, ax = plt.subplots(2,3, dpi = 300)
-        fig.suptitle(f'Type 1 {model} RDMs')
+        fig.suptitle(f'Type 1 {model} RDMs, sorted={sorted}')
 
         max_dist = model_ultimates[model]['max']
         min_dist = model_ultimates[model]['min']
@@ -115,7 +206,10 @@ def plot_t1_rdms():
         cbar = fig.colorbar(im, ax=ax.ravel().tolist())
         cbar.ax.set_ylabel(f'{metric} distance', fontsize=12)
 
-        img_path = res_folder + f'/{model}_rdms.png'
+        if sorted == True:
+            img_path = res_folder + f'/{model}_rdms_sorted.png'
+        else:
+            img_path = res_folder + f'/{model}_rdms.png'
         plt.savefig(img_path)
         plt.clf()
 
@@ -411,9 +505,8 @@ def rdm_t2_emb_type_sim():
 
 
 # ------------- RDM type 3 (cluster based)
-# Load clusters
 
-def rdm_type3(k=40, sorted=False):
+def rdm_t3(ctype='hierarch',  k=60, sorted=False):
     
     # Load global embeddings df
     with open(f'/scratch/azonneveld/rsa/md_global.pkl', 'rb') as f: 
@@ -431,7 +524,7 @@ def rdm_type3(k=40, sorted=False):
     for var in vars_oi:
 
         # Load cluster data
-        with open(f'/scratch/azonneveld/clustering/kmean_k{k}_train_{var}.pkl', 'rb') as f: 
+        with open(f'/scratch/azonneveld/clustering/{ctype}_k{k}_train_{var}.pkl', 'rb') as f: 
             clusters = pickle.load(f)
 
         cluster_labels = clusters.labels_   
@@ -454,7 +547,27 @@ def rdm_type3(k=40, sorted=False):
             sort_col2 = 'glb_' + var + '_lab'
             md_select = md_select.sort_values(by=[sort_col1, sort_col2],
                     )
+        elif sorted =='biggest':
+            clusters_unique, cluster_counts = np.unique(np.array(cluster_labels), return_counts=True)
+            count_df = pd.DataFrame()
+            count_df['cluster'] = clusters_unique
+            count_df['size'] = cluster_counts
+            count_df = count_df.sort_values(by=['size'], ascending=False)
+            size_index = [*range(k)]
+            count_df['size_index'] = size_index
+
+            size_ids = []
+            for i in range(n_stimuli):
+                clus = md_select[col_1].iloc[i]
+                size_id = count_df[count_df['cluster'] == clus]['size_index'].to_numpy()[0]
+                size_ids.append(size_id)
             
+            col_3 = var + '_size_id'
+            col_4 = 'glb_' + var + '_lab'
+            md_select[col_3] = size_ids
+            md_select = md_select.sort_values(by=[col_3, col_4],
+                    )
+
         for i in range(n_stimuli):
             centroid = md_select[col_2].iloc[i]
             centroid_matrix[i, :] = centroid
@@ -464,13 +577,16 @@ def rdm_type3(k=40, sorted=False):
         centroid_matrices[var] = centroid_matrix
 
     if sorted == True:
-        with open(f'/scratch/azonneveld/rsa/rdm_t3_sorted', 'wb') as f:
-                    pickle.dump(rdms, f)
+        with open(f'/scratch/azonneveld/rsa/rdm_t3_{ctype}_k{k}_sorted', 'wb') as f:
+            pickle.dump(rdms, f)
+    elif sorted == 'biggest':
+        with open(f'/scratch/azonneveld/rsa/rdm_t3_{ctype}_k{k}_biggest', 'wb') as f:
+            pickle.dump(rdms, f)
     else:
-        with open(f'/scratch/azonneveld/rsa/rdm_t3', 'wb') as f:
+        with open(f'/scratch/azonneveld/rsa/rdm_t3_{ctype}_k{k}', 'wb') as f:
             pickle.dump(rdms, f)
 
-        
+
     # Get max and min of all rdms 
     maxs = []
     mins = []
@@ -485,7 +601,7 @@ def rdm_type3(k=40, sorted=False):
 
     # Create plots
     fig, ax = plt.subplots(1, 2, dpi = 500)
-    fig.suptitle(f'Type 3 higher-order RDMs, sorted={sorted}')
+    fig.suptitle(f'Type 3 HO RDMs {ctype} k={k}, sorted={sorted}')
 
     for i in range(len(vars_oi)):
         var = vars_oi[i]
@@ -501,12 +617,13 @@ def rdm_type3(k=40, sorted=False):
     cbar.ax.set_ylabel(f'Euclidean distance', fontsize=12)
 
     if sorted == True:
-        img_path = res_folder + f'/rdm_t3_sorted.png'
+        img_path = res_folder + f'/rdm_t3_{ctype}_k{k}_sorted.png'
+    elif sorted == 'biggest':
+        img_path = res_folder + f'/rdm_t3_{ctype}_k{k}_biggest.png'
     else:
-        img_path = res_folder + f'/rdm_t3.png'
+        img_path = res_folder + f'/rdm_t3_{ctype}_k{k}.png'
     plt.savefig(img_path)
     plt.clf()
-
 
 
 #  --------------  MAIN
@@ -514,12 +631,14 @@ def rdm_type3(k=40, sorted=False):
 # calc_t1_rdms()
 # plot_t1_rdms()
 # rdm_model_sim()
+# calc_t1_rdm_freq()
+
 
 # Type 2 RDM analysis
 # global_emb()
 # calc_t2_rdms('global', sort=True)
 # calc_t2_rdms('derived', sort=True)
-calc_t2_rdms('global', sort=False)
+# calc_t2_rdms('global', sort=False)
 # calc_t2_rdms('derived', sort=False)
 # calc_t2_rdms('first')
 # plot_t2_rdms('global', sort=True)
@@ -530,12 +649,6 @@ calc_t2_rdms('global', sort=False)
 # rdm_t2_emb_type_sim()
 
 
-
-# test
-# md_cols_oi = ['objects', 'glb_objects_lab'] 
-# md_cols_oi = ['scenes', 'glb_scenes_lab'] 
-# md_cols_oi = ['actions', 'glb_actions_lab']
-# md_select = md_global[md_cols_oi].iloc[120:130]
-
-
-
+# Type 3 RDM analysis
+rdm_t3(ctype='hierarch', sorted='biggest')
+rdm_t3(ctype='kmean', sorted='biggest')
