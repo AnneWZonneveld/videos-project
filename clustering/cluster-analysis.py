@@ -12,13 +12,39 @@ import bokeh.palettes
 from sklearn.manifold import MDS
 from sklearn.cluster import KMeans, AgglomerativeClustering
 from sklearn.metrics import silhouette_score
+from sklearn.neighbors import NearestCentroid
 from scipy.cluster.hierarchy import dendrogram, cut_tree, cophenet
 import random
 import scipy as sp
 from scipy.spatial.distance import squareform, pdist
 
-random.seed(1)
+class AgglomerativeClusteringWithPredict(AgglomerativeClustering):
+    def __init__(self, fname, lname):
+        super().__init__(fname, lname) 
 
+    def __init__(self, n_clusters, distance_threshold, linkage, compute_full_tree, compute_distances):
+        super().__init__(n_clusters=n_clusters, distance_threshold=distance_threshold, 
+                         linkage=linkage, compute_full_tree=compute_full_tree, compute_distances=compute_distances)
+        
+    def predict(self, fm):
+        self.labels_ = super().fit_predict(fm)
+
+    def calc_centroids(self, fm):
+        clf = NearestCentroid()
+        clf.fit(fm, self.labels_)
+        centroids = clf.centroids_
+        self.cluster_centers_ = centroids
+    
+    def fit_predict(self, fm):
+        self.labels_ = super().fit_predict(fm)
+        self.calc_centroids(fm)
+
+        return self
+
+    cluster_centers_ = []
+    labels_ = []
+    
+random.seed(1)
 res_folder = '/scratch/azonneveld/clustering/plots' 
 
 # Load metadata
@@ -34,7 +60,7 @@ def ex_kmeans(fms, zet, var, n_clusters = 8, max_iter = 300, r_state = 0):
 
 def ex_hierarch(fms, zet, var, thres=None, n_clusters=None, linkage='ward'):
     fm = fms[zet][var]
-    agglo = AgglomerativeClustering(distance_threshold=thres, n_clusters=n_clusters, compute_full_tree=True, linkage=linkage, compute_distances=True).fit(fm)
+    agglo = AgglomerativeClusteringWithPredict(distance_threshold=thres, n_clusters=n_clusters, compute_full_tree=True, linkage=linkage, compute_distances=True).fit_predict(fm)
 
     return agglo
 
@@ -332,54 +358,81 @@ def visual_inspect(zet, var, mds=True, count=True, k='bf', ctype='kmean', linkag
         plt.clf()
 
 
-def cluster_content(zet, var, linkage, k=2):
-      
+def cluster_content(zet, var, linkage, k=2, vid=True, pred=True):
+
     fit = ex_hierarch(fms=fms, zet=zet, var=var, n_clusters=k, linkage='ward')              
     cluster_labels = fit.labels_.tolist()
     n_clusters = len(np.unique(cluster_labels))
 
-    der_col = 'glb_' + var + '_lab'
-    md_select = md[md['set']==zet][der_col].reset_index(drop=True).to_frame(name='label')
-    md_select['cluster'] = cluster_labels
+    if vid == True:
+        der_col = 'glb_' + var + '_lab'
+        md_select = md[md['set']==zet][der_col].reset_index(drop=True).to_frame(name='label')
+        md_select['cluster'] = cluster_labels
 
-    count_df = md_select.groupby(['cluster','label']).size().to_frame(name='count').reset_index()
-    count_df = count_df.sort_values(by=['cluster', 'count'],
-                    )
+        count_df = md_select.groupby(['cluster','label']).size().to_frame(name='count').reset_index()
+        count_df = count_df.sort_values(by=['cluster', 'count'],
+                        )
 
-    ncols = 5
-    nrows = n_clusters // ncols + (n_clusters % ncols > 0)
+        ncols = 5
+        nrows = n_clusters // ncols + (n_clusters % ncols > 0)
 
-    fig = plt.figure(dpi=300, figsize=(22, 16))
-    for i in range(n_clusters):
-        cluster_df = count_df[count_df['cluster']== i]
-        cluster_size = cluster_df['count'].sum() 
-        ax  = plt.subplot(nrows, ncols, i+1)       
-        sns.barplot(data = cluster_df, x='label', y='count', ax = ax)
-        ax.set_xticklabels(ax.get_xticklabels(), rotation=90, size=6)
-        ax.set_xlabel('')
-        ax.set_title(f'cluster {i} ({cluster_size})', size=8)
-    fig.suptitle(f'{linkage}, k={n_clusters}')
-    fig.tight_layout()
-    fig.subplots_adjust(top=0.88)
-    img_path = res_folder + f'/cluster_content/{linkage}_k{k}.png'
-    plt.savefig(img_path)
-    plt.clf()
+        fig = plt.figure(dpi=300, figsize=(22, 16))
+        for i in range(n_clusters):
+            cluster_df = count_df[count_df['cluster']== i]
+            cluster_size = cluster_df['count'].sum() 
+            ax  = plt.subplot(nrows, ncols, i+1)       
+            sns.barplot(data = cluster_df, x='label', y='count', ax = ax)
+            ax.set_xticklabels(ax.get_xticklabels(), rotation=90, size=6)
+            ax.set_xlabel('')
+            ax.set_title(f'cluster {i} ({cluster_size})', size=8)
+        fig.suptitle(f'{linkage}, k={n_clusters}')
+        fig.tight_layout()
+        fig.subplots_adjust(top=0.88)
+        img_path = res_folder + f'/cluster_content/{var}/{linkage}_k{k}.png'
+        plt.savefig(img_path)
+        plt.clf()
 
-    # TEst
-    fit = ex_hierarch(fms=fms, zet=zet, var=var, n_clusters=k, linkage='ward') 
-    with open(f'/scratch/azonneveld/meta-explore/guse_wv_all.pkl', 'rb') as f: 
-        wvs = pickle.load(f)
-    
-    temp_fm = np.zeros((len(wvs.keys()), 512))
-    for i 
-    
+    # Prediction based on word embeddings
+    if pred == True:
+        ""
 
+        with open(f'/scratch/azonneveld/meta-explore/guse_wv.pkl', 'rb') as f: 
+            wvs = pickle.load(f)
+        
+        wvs = wvs[zet][var]
+        
+        labels = list(wvs.keys())
+        n_labels = len(labels)
+        temp_fm = np.zeros((n_labels, 512))
+        for i in range(n_labels):
+            label = labels[i]
+            embedding = wvs[label]
+            temp_fm[i, :] = embedding
+        
+        predictions = fit.fit_predict(temp_fm)
+        pred_df = pd.DataFrame()
+        pred_df['label'] = labels
+        pred_df['cluster'] = predictions.tolist()
+        pred_df['count'] = [1]*n_labels
 
+        ncols = 5
+        nrows = n_clusters // ncols + (n_clusters % ncols > 0)
 
-
-
-def clus_size_dist():
-    pass
+        fig = plt.figure(dpi=300, figsize=(22, 16))
+        for i in range(n_clusters):
+            cluster_df = pred_df[pred_df['cluster']== i]
+            cluster_size = cluster_df['count'].sum() 
+            ax  = plt.subplot(nrows, ncols, i+1)       
+            sns.barplot(data = cluster_df, x='label', y='count', ax = ax)
+            ax.set_xticklabels(ax.get_xticklabels(), rotation=90, size=6)
+            ax.set_xlabel('')
+            ax.set_title(f'cluster {i} ({cluster_size})', size=8)
+        fig.suptitle(f'{linkage}, k={n_clusters}')
+        fig.tight_layout()
+        fig.subplots_adjust(top=0.88)
+        img_path = res_folder + f'/cluster_content/{var}/pred_{linkage}_k{k}.png'
+        plt.savefig(img_path)
+        plt.clf()
 
 
 def sample_ks(zet, var, clus_range, ctype='kmean', linkage=''):
@@ -400,7 +453,7 @@ def sample_ks(zet, var, clus_range, ctype='kmean', linkage=''):
         visual_inspect(zet=zet, var=var, k=k, ctype=ctype, linkage=linkage)
 
 
-def plot_dendogram(zet, var, linkage, p=60, k='bf', **kwargs):
+def plot_dendogram(zet, var, linkage, p=100, k='bf', **kwargs):
 
     if k == 'bf':
         # Load best fit
@@ -448,11 +501,27 @@ def plot_dendogram(zet, var, linkage, p=60, k='bf', **kwargs):
     return linkage_matrix
 
 
-# ------ MAIN
+def calc_centroids(zet, var, k=60):
+
+    with open(f'/scratch/azonneveld/clustering/hierarch_k{60}_{zet}_{var}_ward.pkl', 'rb') as f: 
+        fit = pickle.load(f)
+
+    fm = fms[zet][var]
+    labels = fit.labels_
+
+    clf = NearestCentroid()
+    clf.fit(fm, labels)
+    
+    centroids = clf.centroids_
+    
+    return centroids
+
+    
+# --------------------------------------- MAIN
 with open(f'/scratch/azonneveld/rsa/fm_guse_glb.pkl', 'rb') as f: 
         fms = pickle.load(f)
 
-# K-mean
+# ---- K-mean
 # elbow_plot(fms, zet='train', var='actions', clus_range=range(2, 200), its=10, ctype='kmeans')
 # elbow_plot(fms, zet='train', var='scenes', clus_range=range(2, 200), its=10, ctype='kmeans')
 # elbow_plot(fms, zet='train', var='objects', clus_range=range(2, 200), its=3, ctype='kmeans')
@@ -464,7 +533,7 @@ with open(f'/scratch/azonneveld/rsa/fm_guse_glb.pkl', 'rb') as f:
 # sample_ks(zet='train', var='actions', clus_range=[20, 30, 40, 50, 60], ctype='kmean')
 # sample_ks(zet='train', var='scenes', clus_range=[20, 30, 40, 50, 60], ctype='kmean')
 
-# Hierarchical
+# ---- Hierarchical
 # elbow_plot(fms, zet='train', var='scenes', clus_range=np.arange(0.1, 2, 0.01), c_type='hierarch', linkage='ward', cb=False)  #threshold
 # elbow_plot(fms, zet='train', var='scenes', clus_range=np.arange(0.1, 1.08, 0.01), c_type='hierarch', linkage='average', cb=False) # threshold
 # elbow_plot(fms, zet='train', var='scenes', clus_range=np.arange(0.1, 0.75, 0.01), c_type='hierarch', linkage='single', cb=False)  #threshold
@@ -490,10 +559,17 @@ with open(f'/scratch/azonneveld/rsa/fm_guse_glb.pkl', 'rb') as f:
 # sample_ks(zet='train', var='scenes', clus_range=[20, 30, 40, 50, 60], ctype='hierarch')
 
 # Plot dendogram
-# linkage_matrix = plot_dendogram(zet='train', var='actions', linkage='ward', k=40)
+# linkage_matrix = plot_dendogram(zet='train', var='actions', linkage='ward', k='bf')
+# linkage_matrix = plot_dendogram(zet='train', var='scenes', linkage='ward', k='bf')
+
+# Calculate cluster centroids 
 
 # Asses cluster content for different points hierarchy
-ks = 20
-for k in range(2, ks):
+ks = 50
+for k in range(30, ks):
     print(f'Assesing content k={k}')
-    cluster_content(zet='train', var='actions', linkage='ward', k=k)
+    cluster_content(zet='train', var='actions', linkage='ward', k=k, vid=True, pred=False)
+
+# for k in range(2, ks):
+#     print(f'Assesing content k={k}')
+#     cluster_content(zet='train', var='scenes', linkage='ward', k=k, vid=False)
