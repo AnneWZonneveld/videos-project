@@ -7,10 +7,12 @@ import seaborn as sns
 from IPython import embed as shell
 from sklearn.metrics import pairwise_distances
 from scipy.spatial.distance import squareform
+from sklearn.cluster import KMeans, AgglomerativeClustering
 import tensorflow as tf
 # import tensorflow_hub as hub
 from datasets import load_dataset, Dataset, DatasetDict
 from natsort import index_natsorted
+from scipy.stats import pearsonr
 
 file_path = '/scratch/azonneveld/downloads/annotations_humanScenes.json'
 md = pd.read_json(file_path).transpose()
@@ -21,6 +23,32 @@ zets = ['train', 'test']
 vars = ['objects', 'scenes', 'actions']
 models = ['ft', 'cb_ft', 'skip_ft', 'bert', 'guse']
 metric='euclidean'
+
+class AgglomerativeClusteringWithPredict(AgglomerativeClustering):
+    def __init__(self, fname, lname):
+        super().__init__(fname, lname) 
+
+    def __init__(self, n_clusters, distance_threshold, linkage, compute_full_tree, compute_distances):
+        super().__init__(n_clusters=n_clusters, distance_threshold=distance_threshold, 
+                         linkage=linkage, compute_full_tree=compute_full_tree, compute_distances=compute_distances)
+        
+    def predict(self, fm):
+        self.labels_ = super().fit_predict(fm)
+
+    def calc_centroids(self, fm):
+        clf = NearestCentroid()
+        clf.fit(fm, self.labels_)
+        centroids = clf.centroids_
+        self.cluster_centers_ = centroids
+    
+    def fit_predict(self, fm):
+        self.labels_ = super().fit_predict(fm)
+        self.calc_centroids(fm)
+
+        return self
+
+    cluster_centers_ = []
+    labels_ = []
 
 # ---------------- RDM type 1: all labels (not per video)
 def calc_t1_rdms(): 
@@ -506,7 +534,7 @@ def rdm_t2_emb_type_sim():
 
 # ------------- RDM type 3 (cluster based)
 
-def rdm_t3(ctype='hierarch',  k=60, sorted=False):
+def rdm_t3(ctype='hierarch', k=60, sorted=False):
     
     # Load global embeddings df
     with open(f'/scratch/azonneveld/rsa/md_global.pkl', 'rb') as f: 
@@ -524,8 +552,13 @@ def rdm_t3(ctype='hierarch',  k=60, sorted=False):
     for var in vars_oi:
 
         # Load cluster data
-        with open(f'/scratch/azonneveld/clustering/{ctype}_k{k}_train_{var}.pkl', 'rb') as f: 
-            clusters = pickle.load(f)
+        if ctype == 'hierarch':
+            with open(f'/scratch/azonneveld/clustering/fits/{ctype}_k{k}_train_{var}_ward.pkl', 'rb') as f: 
+                clusters = pickle.load(f)
+        else:
+            with open(f'/scratch/azonneveld/clustering/fits/{ctype}_k{k}_train_{var}.pkl', 'rb') as f: 
+                clusters = pickle.load(f)
+
 
         cluster_labels = clusters.labels_   
         centroids = []
@@ -626,6 +659,42 @@ def rdm_t3(ctype='hierarch',  k=60, sorted=False):
     plt.clf()
 
 
+def rdm_t3_sim(k=60, sorted=True):
+
+    if sorted == 'biggest':
+
+        ks = [*range(20, 110, 10)]  
+        cor_dict = {}
+        cor_dict['scenes'] = []
+        cor_dict['actions'] = []
+
+        for k in ks:
+            with open(f'/scratch/azonneveld/rsa/rdm_t3_hierarch_k{k}_biggest', 'rb') as f:
+                h_rdms = pickle.load(f)
+            
+            with open(f'/scratch/azonneveld/rsa/rdm_t3_kmean_k{k}_biggest', 'rb') as f:
+                k_rdms = pickle.load(f)
+    
+            keys = h_rdms.keys()
+            for key in keys:
+                cor = pearsonr(h_rdms[key].ravel(), k_rdms[key].ravel())
+                cor_dict[key].append(cor[0])
+        
+        print(cor_dict)
+
+        fig, ax = plt.subplots(1, 1,  dpi = 300)
+        ax.plot(ks, cor_dict['actions'], label='actions', color='red', marker='.')
+        ax.plot(ks, cor_dict['scenes'], label='scenes', color='green', marker='.')
+        ax.set_title('Relationship kmeans - hierarch RDMs', fontsize=11)
+        ax.set_xlabel("K", fontsize=10)
+        ax.set_ylabel("Pearson r", fontsize=10)
+        ax.legend(labels=['actions', 'scenes'])
+        img_path = res_folder + f'/rdm_t3_corplot.png'
+        plt.savefig(img_path)
+        plt.clf()
+
+    
+
 #  --------------  MAIN
 # Type 1 RDM analysis
 # calc_t1_rdms()
@@ -650,5 +719,8 @@ def rdm_t3(ctype='hierarch',  k=60, sorted=False):
 
 
 # Type 3 RDM analysis
-rdm_t3(ctype='hierarch', sorted='biggest')
-rdm_t3(ctype='kmean', sorted='biggest')
+ks = [*range(20, 110, 10)]  
+for k in ks:
+    rdm_t3(ctype='kmean', sorted='biggest', k=k)
+    rdm_t3(ctype='hierarch', sorted='biggest', k=k)
+
