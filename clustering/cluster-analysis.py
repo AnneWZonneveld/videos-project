@@ -432,21 +432,22 @@ def plot_dendogram(zet, var, linkage, p=100, k='bf', **kwargs):
     return linkage_matrix
 
 
-def load_FAISS():
+def load_FAISS(var):
 
     print('Setting up FAISS')
 
     # Set up FAISS 
-    with open(f'/scratch/azonneveld/meta-explore/guse_wv_all.pkl', 'rb') as f: # guse wv all is empty?
+    with open(f'/scratch/azonneveld/meta-explore/guse_wv.pkl', 'rb') as f: 
         wv_dict = pickle.load(f)
-
-    keys = list(wv_dict.keys())
-    n_features = wv_dict[keys[0]].shape[0]
+    
+    var_labels = list(wv_dict['train'][var].keys()) + list(wv_dict['test'][var].keys())   
+    var_labels = list(np.unique(np.asarray(var_labels)))                  
+    n_features = 512
 
     module_url = "https://tfhub.dev/google/universal-sentence-encoder/4"
     model = hub.load(module_url)
 
-    ds_dict = {'labels': wv_dict.keys()}
+    ds_dict = {'labels': var_labels}
     ds = Dataset.from_dict(ds_dict)
     embeddings_ds = ds.map(
         lambda x: {"embeddings": model([x['labels']]).numpy()[0]}
@@ -499,7 +500,7 @@ def cluster_content(zet, var, FAISS, linkage='ward', k=2, vid=True, pred=False):
         ncols = 5
         nrows = n_clusters // ncols + (n_clusters % ncols > 0)
 
-        fig = plt.figure(dpi=300, figsize=(22, 16))
+        fig = plt.figure(dpi=300, figsize=(40, 30))
         for i in range(n_clusters):
             cluster_df = count_df[count_df['cluster']== i]
             cluster_size = cluster_df['count'].sum() 
@@ -575,7 +576,7 @@ def cluster_content(zet, var, FAISS, linkage='ward', k=2, vid=True, pred=False):
 
 
 def dendogram_labels(zet, var, linkage='ward', ks=50):
-    FAISS = load_FAISS()
+    FAISS = load_FAISS(var=var)
     
     for k in range(2, ks):
         cluster_content(zet=zet, var=var, FAISS= FAISS, linkage=linkage, k=k)
@@ -628,5 +629,5 @@ def dendogram_labels(zet, var, linkage='ward', ks=50):
 
 
 # Asses cluster content for different points hierarchy
-dendogram_labels(zet='train', var='actions', linkage='ward', ks=80)
-dendogram_labels(zet='train', var='scenes', linkage='ward', ks=80)
+# dendogram_labels(zet='train', var='actions', linkage='ward', ks=3)
+dendogram_labels(zet='train', var='scenes', linkage='ward', ks=20) # adjust so also applicable to kmeans?

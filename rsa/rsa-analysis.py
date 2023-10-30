@@ -9,7 +9,7 @@ from sklearn.metrics import pairwise_distances
 from scipy.spatial.distance import squareform
 from sklearn.cluster import KMeans, AgglomerativeClustering
 import tensorflow as tf
-# import tensorflow_hub as hub
+import tensorflow_hub as hub
 from datasets import load_dataset, Dataset, DatasetDict
 from natsort import index_natsorted
 from scipy.stats import pearsonr
@@ -92,7 +92,7 @@ def calc_t1_rdms():
         rdm_models[model] = rdm_zets
 
     # Save all model rdms
-    with open(f'/scratch/azonneveld/rsa/rdm_t1_models.pkl', 'wb') as f:
+    with open(f'/scratch/azonneveld/rsa/rdms/rdm_t1_models.pkl', 'wb') as f:
                     pickle.dump(rdm_models, f)
 
 def calc_t1_rdm_freq():
@@ -133,7 +133,7 @@ def calc_t1_rdm_freq():
         rdm_zets[zet] = rdm_vars
     
     # Save all model rdms
-    with open(f'/scratch/azonneveld/rsa/rdm_t1_guse_sorted.pkl', 'wb') as f:
+    with open(f'/scratch/azonneveld/rsa/rdms/rdm_t1_guse_freq_sorted.pkl', 'wb') as f:
                     pickle.dump(rdm_zets, f)
     
 
@@ -155,7 +155,7 @@ def calc_t1_rdm_freq():
 
     # Create plots
     fig, ax = plt.subplots(2,3, dpi = 500)
-    fig.suptitle(f'Type 1 GUSE RDMs , sorted')
+    fig.suptitle(f'Type 1 GUSE RDMs , freq sorted')
 
     for j in range(len(zets)):
         zet = zets[j]
@@ -174,7 +174,7 @@ def calc_t1_rdm_freq():
     cbar = fig.colorbar(im, ax=ax.ravel().tolist())
     cbar.ax.set_ylabel(f'{metric} distance', fontsize=12)
 
-    img_path = res_folder + f'/rdm_t1_guse_sorted.png'
+    img_path = res_folder + f'/rdm_t1_guse_freq_sorted.png'
     plt.savefig(img_path)
     plt.clf()
     
@@ -183,10 +183,10 @@ def plot_t1_rdms():
 
     # Load rdms
     if sorted == 'True':
-        with open(f'/scratch/azonneveld/meta-explore/rdm_t1_models_sorted.pkl', 'rb') as f: 
+        with open(f'/scratch/azonneveld/rsa/rdms/rdm_t1_models_sorted.pkl', 'rb') as f: 
             rdm_models = pickle.load(f)
     else:
-        with open(f'/scratch/azonneveld/meta-explore/rdm_t1_models.pkl', 'rb') as f: 
+        with open(f'/scratch/azonneveld/rsa/rdms/rdm_t1_models.pkl', 'rb') as f: 
             rdm_models = pickle.load(f)
 
     # Get max and min of all rdms per model
@@ -245,7 +245,7 @@ def plot_t1_rdms():
 def rdm_model_sim():
 
     # Load rdms
-    with open(f'/scratch/azonneveld/rsa/rdm_models.pkl', 'rb') as f: 
+    with open(f'/scratch/azonneveld/rsa/rdms/rdm_models.pkl', 'rb') as f: 
         rdm_models = pickle.load(f)
 
     fig, ax = plt.subplots(2,3, dpi = 300)
@@ -264,7 +264,6 @@ def rdm_model_sim():
                 df[model] = rdm
 
             im = ax[j,i].imshow(df.corr(), vmin=-0.5, vmax=1)
-            # im = sns.heatmap(df.corr(), vmin=-0.5, vmax=1, ax=ax[j,i], square=True, cbar=False, cmap='viridis', annot=True)
             ax[j,i].set_xticks([0,1,2,3,4]) 
             ax[j,i].set_xticklabels(models, fontsize=5)
             ax[j,i].set_yticks([0,1,2,3,4]) 
@@ -285,27 +284,32 @@ def rdm_model_sim():
 def global_emb():
          
     # Load embeddings
-    with open(f'/scratch/azonneveld/meta-explore/guse_wv_all.pkl', 'rb') as f: # guse wv all is empty?
+    with open(f'/scratch/azonneveld/meta-explore/guse_wv.pkl', 'rb') as f: 
         wv_dict = pickle.load(f)
 
-    keys = list(wv_dict.keys())
-    n_features = wv_dict[keys[0]].shape[0]
+    n_features = 512
 
     # Load model
     module_url = "https://tfhub.dev/google/universal-sentence-encoder/4"
     model = hub.load(module_url)
 
-    # Set up FAISS dataset
-    ds_dict = {'labels': wv_dict.keys()}
-    ds = Dataset.from_dict(ds_dict)
-    embeddings_ds = ds.map(
-        lambda x: {"embeddings": model([x['labels']]).numpy()[0]}
-    )
-    embeddings_ds.add_faiss_index(column='embeddings')
-
     new_md = md.copy()
 
     for var in vars:
+
+        # Setting up FAISS dataset
+        print (f'Setting up FAISS {var}')
+        var_labels = list(wv_dict['train'][var].keys()) + list(wv_dict['test'][var].keys())   
+        var_labels = list(np.unique(np.asarray(var_labels)))                  
+
+        ds_dict = {'labels': var_labels}
+        ds = Dataset.from_dict(ds_dict)
+        embeddings_ds = ds.map(
+            lambda x: {"embeddings": model([x['labels']]).numpy()[0]}
+        )
+        embeddings_ds.add_faiss_index(column='embeddings')
+
+        # Calc global emb
         print(f'calculating global emb {var}')
         global_embs = []
         global_labels = []
@@ -346,6 +350,7 @@ def calc_t2_rdms(emb_type='global', sort=False):
     Emb_type: 'global', 'derived', 'first'
 
     """
+
     print(f"Calculating t2 rdms {emb_type}")
     
     # Load global embeddings df
@@ -401,21 +406,21 @@ def calc_t2_rdms(emb_type='global', sort=False):
     
     # Save rdms
     if emb_type == 'global':
-        file_name = 'guse_glb.pkl'
+        file_name = 'guse_glb'
     elif emb_type == 'derived':
-        file_name = 'guse_der.pkl'
+        file_name = 'guse_der'
     elif emb_type == 'first':
-        file_name = 'guse_first.pkl'
+        file_name = 'guse_first'
     
     if sort == True:
-        with open(f'/scratch/azonneveld/rsa/rdm_t2_{file_name}_sorted', 'wb') as f:
+        with open(f'/scratch/azonneveld/rsa/rdms/rdm_t2_{file_name}_sorted.pkl', 'wb') as f:
                     pickle.dump(rdm_zets, f)
     else:
-        with open(f'/scratch/azonneveld/rsa/rdm_t2_{file_name}', 'wb') as f:
+        with open(f'/scratch/azonneveld/rsa/rdms/rdm_t2_{file_name}.pkl', 'wb') as f:
             pickle.dump(rdm_zets, f)
     
     # Save feature matrices
-    with open(f'/scratch/azonneveld/rsa/feature_m_{file_name}', 'wb') as f:
+    with open(f'/scratch/azonneveld/rsa/fm_{file_name}.pkl', 'wb') as f:
         pickle.dump(fm_zets, f)
     
 
@@ -431,10 +436,10 @@ def plot_t2_rdms(emb_type='global', sort=False):
         file_name = 'rdm_t2_guse_first.pkl'
 
     if sort == True:   
-        with open(f'/scratch/azonneveld/rsa/{file_name}_sorted', 'rb') as f: 
+        with open(f'/scratch/azonneveld/rsa/rdms/{file_name}_sorted', 'rb') as f: 
             rdms = pickle.load(f)
     else:
-        with open(f'/scratch/azonneveld/rsa/{file_name}', 'rb') as f: 
+        with open(f'/scratch/azonneveld/rsa/rdms/{file_name}', 'rb') as f: 
             rdms = pickle.load(f)
 
     # Get max and min of all rdms 
@@ -495,7 +500,7 @@ def rdm_t2_emb_type_sim():
         elif emb_type == 'first':
             file_name = 'rdm_t2_guse_first.pkl'
 
-        with open(f'/scratch/azonneveld/rsa/{file_name}', 'rb') as f: 
+        with open(f'/scratch/azonneveld/rsa/rdms/{file_name}', 'rb') as f: 
             rdms = pickle.load(f)
         
         rdms_embtypes[emb_type] = rdms
@@ -610,13 +615,13 @@ def rdm_t3(ctype='hierarch', k=60, sorted=False):
         centroid_matrices[var] = centroid_matrix
 
     if sorted == True:
-        with open(f'/scratch/azonneveld/rsa/rdm_t3_{ctype}_k{k}_sorted', 'wb') as f:
+        with open(f'/scratch/azonneveld/rsa/rdms/rdm_t3_{ctype}_k{k}_sorted', 'wb') as f:
             pickle.dump(rdms, f)
     elif sorted == 'biggest':
-        with open(f'/scratch/azonneveld/rsa/rdm_t3_{ctype}_k{k}_biggest', 'wb') as f:
+        with open(f'/scratch/azonneveld/rsa/rdms/rdm_t3_{ctype}_k{k}_biggest', 'wb') as f:
             pickle.dump(rdms, f)
     else:
-        with open(f'/scratch/azonneveld/rsa/rdm_t3_{ctype}_k{k}', 'wb') as f:
+        with open(f'/scratch/azonneveld/rsa/rdms/rdm_t3_{ctype}_k{k}', 'wb') as f:
             pickle.dump(rdms, f)
 
 
@@ -662,6 +667,7 @@ def rdm_t3(ctype='hierarch', k=60, sorted=False):
 def rdm_t3_sim(k=60, sorted=True):
 
     if sorted == 'biggest':
+        # Calculate similarity between cluster-size based sorted kmeans and hierarchical rdms
 
         ks = [*range(20, 110, 10)]  
         cor_dict = {}
@@ -669,10 +675,10 @@ def rdm_t3_sim(k=60, sorted=True):
         cor_dict['actions'] = []
 
         for k in ks:
-            with open(f'/scratch/azonneveld/rsa/rdm_t3_hierarch_k{k}_biggest', 'rb') as f:
+            with open(f'/scratch/azonneveld/rsa/rdms/rdm_t3_hierarch_k{k}_biggest', 'rb') as f:
                 h_rdms = pickle.load(f)
             
-            with open(f'/scratch/azonneveld/rsa/rdm_t3_kmean_k{k}_biggest', 'rb') as f:
+            with open(f'/scratch/azonneveld/rsa/rdms/rdm_t3_kmean_k{k}_biggest', 'rb') as f:
                 k_rdms = pickle.load(f)
     
             keys = h_rdms.keys()
@@ -680,7 +686,6 @@ def rdm_t3_sim(k=60, sorted=True):
                 cor = pearsonr(h_rdms[key].ravel(), k_rdms[key].ravel())
                 cor_dict[key].append(cor[0])
         
-        print(cor_dict)
 
         fig, ax = plt.subplots(1, 1,  dpi = 300)
         ax.plot(ks, cor_dict['actions'], label='actions', color='red', marker='.')
@@ -692,6 +697,10 @@ def rdm_t3_sim(k=60, sorted=True):
         img_path = res_folder + f'/rdm_t3_corplot.png'
         plt.savefig(img_path)
         plt.clf()
+    
+    elif sorted == False:
+        pass
+        # implement part that calculates sim between object/scenes/actions rdms
 
     
 
