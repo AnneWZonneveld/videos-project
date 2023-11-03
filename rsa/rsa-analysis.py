@@ -13,8 +13,9 @@ import tensorflow_hub as hub
 from datasets import load_dataset, Dataset, DatasetDict
 from natsort import index_natsorted
 from scipy.stats import pearsonr
+from statsmodels.stats.multitest import multipletests
 
-file_path = '/scratch/azonneveld/downloads/annotations_humanScenes.json'
+file_path = '/scratch/azonneveld/downloads/annotations_humanScenesObjects.json'
 md = pd.read_json(file_path).transpose()
 
 res_folder = '/scratch/azonneveld/rsa/plots' 
@@ -49,6 +50,10 @@ class AgglomerativeClusteringWithPredict(AgglomerativeClustering):
 
     cluster_centers_ = []
     labels_ = []
+
+
+def pearsonr_pval(x,y):
+        return pearsonr(x,y)[1]
 
 # ---------------- RDM type 1: all labels (not per video)
 def calc_t1_rdms(): 
@@ -281,9 +286,14 @@ def rdm_model_sim():
             
             
 # # ------------------- RDM type 2: per video 
-def global_emb():
+def global_emb(var, ob_type='freq'):
+
+    print(f'Calcualting gloabal embeddings {var} {ob_type}')
          
     # Load embeddings
+    with open(f'/scratch/azonneveld/meta-explore/guse_wv_all.pkl', 'rb') as f: 
+        wv_dict_all = pickle.load(f)
+
     with open(f'/scratch/azonneveld/meta-explore/guse_wv.pkl', 'rb') as f: 
         wv_dict = pickle.load(f)
 
@@ -293,11 +303,11 @@ def global_emb():
     module_url = "https://tfhub.dev/google/universal-sentence-encoder/4"
     model = hub.load(module_url)
 
-    new_md = md.copy()
+    global_df = pd.DataFrame()
 
-    for var in vars:
+    if var in ['actions', 'scenes']:
 
-        # Setting up FAISS dataset
+        # Setting up var-specific FAISS dataset
         print (f'Setting up FAISS {var}')
         var_labels = list(wv_dict['train'][var].keys()) + list(wv_dict['test'][var].keys())   
         var_labels = list(np.unique(np.asarray(var_labels)))                  
@@ -321,13 +331,13 @@ def global_emb():
             label_matrix = np.zeros((len(labels), n_features))
             for i in range(len(labels)):
                 label = labels[i]
-                label_matrix[i, :] = wv_dict[label]
+                label_matrix[i, :] = wv_dict_all[label]
             global_emb = np.average(label_matrix, axis=0).astype(np.float32)
 
-            # Get closest neighbour of global embedding = global label + get embedding of global label = global derived
+            # Get closest neighbour of global embedding = global label & get embedding of that global label = global derived
             score, sample = embeddings_ds.get_nearest_examples("embeddings", global_emb, k=1)
             global_label = sample['labels'][0]
-            global_derived = wv_dict[global_label]
+            global_derived = wv_dict_all[global_label]
 
             global_embs.append(global_emb)
             global_labels.append(global_label)
@@ -336,26 +346,134 @@ def global_emb():
         emb_col = 'glb_' + var + '_emb'
         lab_col = 'glb_' + var + '_lab'
         der_col = 'glb_' + var + '_der'
-        new_md[emb_col] = global_embs
-        new_md[lab_col] = global_labels
-        new_md[der_col] = global_deriveds
+        global_df[emb_col] = global_embs
+        global_df[lab_col] = global_labels
+        global_df[der_col] = global_deriveds
     
-    # Save new_df
-    with open(f'/scratch/azonneveld/rsa/md_global.pkl', 'wb') as f:
-                pickle.dump(new_md, f)
-        
+        # Save new_df
+        with open(f'/scratch/azonneveld/rsa/global_embs/{var}', 'wb') as f:
+            pickle.dump(global_df, f)
 
-def calc_t2_rdms(emb_type='global', sort=False): 
+    elif var == 'objects':
+
+        if ob_type == 'freq':
+
+            # Calc global emb
+            print(f'calculating global emb {var}{ob_type}')
+            global_embs = []
+            global_labels = []
+
+            for i in range(len(md)):
+                labels = md[var].iloc[i]
+                
+                # Get most frequent object label
+                labels_list = []
+                for j in range(len(labels)):
+                    single_obs = labels[j]
+
+                    for obs in single_obs:
+                        if obs != '--':
+                            labels_list.append(obs)
+                
+                values, counts = np.unique(labels_list, return_counts=True)
+                global_label = values[np.argmax(counts)]
+                global_labels.append(global_label)
+
+                global_emb = wv_dict_all[global_label] 
+                global_embs.append(global_emb)
+            
+            emb_col = 'glb_' + var + '_emb'
+            lab_col = 'glb_' + var + '_lab'
+            global_df[emb_col] = global_embs
+            global_df[lab_col] = global_labels
+        
+        elif ob_type == 'sentence':
+            
+            # Setting up var-specific FAISS dataset
+            print (f'Setting up FAISS {var}')
+            var_labels = list(wv_dict['train'][var].keys()) + list(wv_dict['test'][var].keys())   
+            var_labels = list(np.unique(np.asarray(var_labels)))  
+
+            ds_dict = {'labels': var_labels}
+            ds = Dataset.from_dict(ds_dict)
+            embeddings_ds = ds.map(
+                lambda x: {"embeddings": model([x['labels']]).numpy()[0]}
+            )
+            embeddings_ds.add_faiss_index(column='embeddings')  
+
+            # Calc global emb
+            print(f'calculating global emb {var} {ob_type}')
+            global_embs = []
+            global_labels = []
+            global_deriveds = []
+
+            for i in range(len(md)):
+            # for i in range(100):
+                labels = md[var].iloc[i]
+                
+                # Get all unique labels
+                labels_list = []
+                for j in range(len(labels)):
+                    single_obs = labels[j]
+
+                    for obs in single_obs:
+                        if obs != '--':
+                            labels_list.append(obs)
+                
+                # Only unique words or also repetitions?
+                values, counts = np.unique(labels_list, return_counts=True)
+                
+                # Present all unique labels in sentence manner to GUSE
+                sentence = [" ".join(values)]
+                global_emb = model(sentence).numpy()[0]
+
+                score, sample = embeddings_ds.get_nearest_examples("embeddings", global_emb, k=1)
+                global_label = sample['labels'][0] 
+                global_derived = wv_dict_all[global_label]
+
+                global_embs.append(global_emb)
+                global_labels.append(global_label)
+                global_deriveds.append(global_derived)
+
+            emb_col = 'glb_' + var + '_emb'
+            lab_col = 'glb_' + var + '_lab'
+            der_col = 'glb_' + var + '_der'
+            global_df[emb_col] = global_embs
+            global_df[lab_col] = global_labels
+            global_df[der_col] = global_deriveds
+
+        # Save new_df
+        with open(f'/scratch/azonneveld/rsa/global_embs/objects_{ob_type}', 'wb') as f:
+            pickle.dump(global_df, f)
+
+
+def load_glob_md(ob_type = 'freq'):
+    new_md = md.copy().reset_index(drop=True)
+
+    for var in vars:
+
+        if var != 'objects':
+            with open(f'/scratch/azonneveld/rsa/global_embs/{var}', 'rb') as f: 
+                global_df = pickle.load(f)
+        else:
+            with open(f'/scratch/azonneveld/rsa/global_embs/{var}_{ob_type}', 'rb') as f: 
+                global_df = pickle.load(f)
+
+        new_md = pd.concat([new_md, global_df], axis=1)
+    
+    return new_md
+
+
+def calc_t2_rdms(emb_type='global', sort=False,  ob_type = 'freq'): 
     """
     Emb_type: 'global', 'derived', 'first'
 
     """
 
-    print(f"Calculating t2 rdms {emb_type}")
+    print(f"Calculating t2 rdms {emb_type} {ob_type}")
     
-    # Load global embeddings df
-    with open(f'/scratch/azonneveld/rsa/md_global.pkl', 'rb') as f: 
-        md_global = pickle.load(f)
+    # Load global embeddings df 
+    md_global = load_glob_md(ob_type=ob_type)
 
     # Load embeddings
     with open(f'/scratch/azonneveld/meta-explore/guse_wv_all.pkl', 'rb') as f: 
@@ -413,33 +531,34 @@ def calc_t2_rdms(emb_type='global', sort=False):
         file_name = 'guse_first'
     
     if sort == True:
-        with open(f'/scratch/azonneveld/rsa/rdms/rdm_t2_{file_name}_sorted.pkl', 'wb') as f:
+        with open(f'/scratch/azonneveld/rsa/rdms/rdm_t2_{file_name}_{ob_type}_sorted.pkl', 'wb') as f:
                     pickle.dump(rdm_zets, f)
     else:
-        with open(f'/scratch/azonneveld/rsa/rdms/rdm_t2_{file_name}.pkl', 'wb') as f:
+        with open(f'/scratch/azonneveld/rsa/rdms/rdm_t2_{file_name}_{ob_type}.pkl', 'wb') as f:
             pickle.dump(rdm_zets, f)
     
     # Save feature matrices
-    with open(f'/scratch/azonneveld/rsa/fm_{file_name}.pkl', 'wb') as f:
+    with open(f'/scratch/azonneveld/rsa/fm_{file_name}_{ob_type}.pkl', 'wb') as f:
         pickle.dump(fm_zets, f)
     
 
-def plot_t2_rdms(emb_type='global', sort=False):
-    print(f"Plotting t2 rdms {emb_type}")
+def plot_t2_rdms(emb_type='global', sort=False, ob_type='freq'):
+
+    print(f"Plotting t2 rdms {emb_type} {ob_type}")
 
     # Load rdms
     if emb_type == 'global':
-        file_name = 'rdm_t2_guse_glb.pkl'
+        file_name = 'guse_glb'
     elif emb_type == 'derived':
-        file_name = 'rdm_t2_guse_der.pkl'
+        file_name = 'guse_der'
     elif emb_type == 'first':
-        file_name = 'rdm_t2_guse_first.pkl'
-
+        file_name = 'guse_first'
+ 
     if sort == True:   
-        with open(f'/scratch/azonneveld/rsa/rdms/{file_name}_sorted', 'rb') as f: 
+        with open(f'/scratch/azonneveld/rsa/rdms/rdm_t2_{file_name}_{ob_type}_sorted.pkl', 'rb') as f: 
             rdms = pickle.load(f)
     else:
-        with open(f'/scratch/azonneveld/rsa/rdms/{file_name}', 'rb') as f: 
+        with open(f'/scratch/azonneveld/rsa/rdms/rdm_t2_{file_name}_{ob_type}.pkl', 'rb') as f: 
             rdms = pickle.load(f)
 
     # Get max and min of all rdms 
@@ -460,7 +579,7 @@ def plot_t2_rdms(emb_type='global', sort=False):
 
     # Create plots
     fig, ax = plt.subplots(2,3, dpi = 500)
-    fig.suptitle(f'Type 2 GUSE RDMs {emb_type}, sorted {sort} ')
+    fig.suptitle(f'Type 2 GUSE RDMs {emb_type}, sorted {sort}, ob_type={ob_type}', size=8)
 
     for j in range(len(zets)):
         zet = zets[j]
@@ -480,12 +599,82 @@ def plot_t2_rdms(emb_type='global', sort=False):
     cbar.ax.set_ylabel(f'{metric} distance', fontsize=12)
 
     if sort == True:  
-        img_path = res_folder + f'/rdm_t2_guse_{emb_type}_sorted.png'
+        img_path = res_folder + f'/rdm_t2/rdm_t2_guse_{emb_type}_{ob_type}_sorted.png'
     else:
-        img_path = res_folder + f'/rdm_t2_guse_{emb_type}.png'
+        img_path = res_folder + f'/rdm_t2/rdm_t2_guse_{emb_type}_{ob_type}.png'
     plt.savefig(img_path)
     plt.clf()
 
+
+def rdm_t2_obj_sim():
+
+    with open(f'/scratch/azonneveld/rsa/rdms/rdm_t2_guse_glb_freq.pkl', 'rb') as f: 
+        freq_rdms = pickle.load(f)
+    
+    with open(f'/scratch/azonneveld/rsa/rdms/rdm_t2_guse_glb_sentence.pkl', 'rb') as f: 
+        sentence_rdms = pickle.load(f)
+    
+    with open(f'/scratch/azonneveld/rsa/fm_guse_glb_sentence.pkl', 'rb') as f: 
+        sentence_fm = pickle.load(f)
+    
+    with open(f'/scratch/azonneveld/rsa/fm_guse_glb_freq.pkl', 'rb') as f: 
+        freq_fm = pickle.load(f)
+
+    # Sanity check --> see whether feature matrices differ   
+    train_cor = pearsonr(freq_fm['train']['objects'].ravel(), sentence_fm['train']['objects'].ravel())
+    test_cor  = pearsonr(freq_fm['test']['objects'].ravel(), sentence_fm['test']['objects'].ravel())
+    print(f'fm cor:')
+    print(f'train: {train_cor}')
+    print(f'test: {test_cor}')
+          
+    # RDM cor
+    train_cor = pearsonr(squareform(freq_rdms['train']['objects']), squareform(sentence_rdms['train']['objects']))
+    test_cor  = pearsonr(squareform(freq_rdms['test']['objects']), squareform(sentence_rdms['test']['objects']))
+    print(f'rdm cor:')
+    print(f'train: {train_cor}')
+    print(f'test: {test_cor}')
+
+
+def rdm_t2_label_sim(ob_type='freq'):
+
+    with open(f'/scratch/azonneveld/rsa/rdms/rdm_t2_guse_glb_{ob_type}.pkl', 'rb') as f: 
+            rdms = pickle.load(f)
+    
+    fig, ax = plt.subplots(1, 2, dpi = 300)
+    fig.suptitle(f'Pairwise correlation Type 2 RDMs, ob_type={ob_type}')
+
+    for j in range(len(zets)):
+        zet = zets[j]
+        df = pd.DataFrame()
+
+        for i in range(len(vars)):
+            var = vars[i]
+            rdm = squareform(rdms[zet][var].round(5))
+            df[var] = rdm
+
+        im = ax[j].imshow(df.corr(), vmin=0.0, vmax=1)
+        ax[j].set_xticks([0,1,2]) 
+        ax[j].set_xticklabels(vars, fontsize=5)
+        ax[j].set_yticks([0,1,2]) 
+        ax[j].set_yticklabels(vars, fontsize=5)
+        ax[j].set_title(f'{zet} {var}', fontsize=7)
+
+        ps = df.corr(method=pearsonr_pval).to_numpy().ravel()
+        corrected_ps = multipletests(ps, alpha=0.05, method='bonferroni')[1] 
+        corrected_ps = corrected_ps.reshape(3,3)
+        print(f'{zet} label cor:')
+        print(f'{df.corr()}')
+        print(f'corrected p-values:')
+        print(f'{corrected_ps}')     
+        
+    fig.tight_layout()
+    cbar = fig.colorbar(im, ax=ax.ravel().tolist())
+    cbar.ax.set_ylabel(f'Pearson correlation', fontsize=12)
+
+    img_path = res_folder + f'/rdm_t2/rdm_t2_label_cor_{ob_type}.png'
+    plt.savefig(img_path)
+    plt.clf()
+    
 
 def rdm_t2_emb_type_sim():
     emb_types = ['global', 'derived', 'first']
@@ -553,6 +742,8 @@ def rdm_t3(ctype='hierarch', k=60, sorted=False):
     
     centroid_matrices = {}
     rdms = {}
+    orderings = {}
+    centroids_dict = {}
 
     for var in vars_oi:
 
@@ -564,7 +755,6 @@ def rdm_t3(ctype='hierarch', k=60, sorted=False):
             with open(f'/scratch/azonneveld/clustering/fits/{ctype}_k{k}_train_{var}.pkl', 'rb') as f: 
                 clusters = pickle.load(f)
 
-
         cluster_labels = clusters.labels_   
         centroids = []
         for i in range(n_stimuli):
@@ -572,6 +762,9 @@ def rdm_t3(ctype='hierarch', k=60, sorted=False):
             centroid = clusters.cluster_centers_[clus_label, :]
             centroids.append(centroid)
         
+        if ctype=='kmean':
+            centroids_dict[var] = centroids
+
         col_1 = var + '_clust'
         col_2 = var + '_centroid'
         md_select[col_1] = cluster_labels
@@ -585,6 +778,8 @@ def rdm_t3(ctype='hierarch', k=60, sorted=False):
             sort_col2 = 'glb_' + var + '_lab'
             md_select = md_select.sort_values(by=[sort_col1, sort_col2],
                     )
+            order = np.asarray(md_select.index)
+
         elif sorted =='biggest':
             clusters_unique, cluster_counts = np.unique(np.array(cluster_labels), return_counts=True)
             count_df = pd.DataFrame()
@@ -605,6 +800,8 @@ def rdm_t3(ctype='hierarch', k=60, sorted=False):
             md_select[col_3] = size_ids
             md_select = md_select.sort_values(by=[col_3, col_4],
                     )
+            
+            order = np.asarray(md_select.index)
 
         for i in range(n_stimuli):
             centroid = md_select[col_2].iloc[i]
@@ -613,16 +810,25 @@ def rdm_t3(ctype='hierarch', k=60, sorted=False):
         rdm = pairwise_distances(centroid_matrix, metric='euclidean')
         rdms[var] = rdm
         centroid_matrices[var] = centroid_matrix
+        orderings[var] = order
 
     if sorted == True:
         with open(f'/scratch/azonneveld/rsa/rdms/rdm_t3_{ctype}_k{k}_sorted', 'wb') as f:
             pickle.dump(rdms, f)
+        with open(f'/scratch/azonneveld/clustering/ordering/{ctype}_k{k}_sorted', 'wb') as f:
+            pickle.dump(orderings, f)
     elif sorted == 'biggest':
         with open(f'/scratch/azonneveld/rsa/rdms/rdm_t3_{ctype}_k{k}_biggest', 'wb') as f:
             pickle.dump(rdms, f)
+        with open(f'/scratch/azonneveld/clustering/ordering/{ctype}_k{k}_biggest', 'wb') as f:
+            pickle.dump(orderings, f)
     else:
         with open(f'/scratch/azonneveld/rsa/rdms/rdm_t3_{ctype}_k{k}', 'wb') as f:
             pickle.dump(rdms, f)
+    
+    if ctype == 'kmean':
+        with open(f'/scratch/azonneveld/clustering/centroids/{ctype}_k{k}.pkl', 'wb') as f:
+            pickle.dump(centroids_dict, f)
 
 
     # Get max and min of all rdms 
@@ -655,11 +861,11 @@ def rdm_t3(ctype='hierarch', k=60, sorted=False):
     cbar.ax.set_ylabel(f'Euclidean distance', fontsize=12)
 
     if sorted == True:
-        img_path = res_folder + f'/rdm_t3_{ctype}_k{k}_sorted.png'
+        img_path = res_folder + f'/rdm_t3/rdm_t3_{ctype}_k{k}_sorted.png'
     elif sorted == 'biggest':
-        img_path = res_folder + f'/rdm_t3_{ctype}_k{k}_biggest.png'
+        img_path = res_folder + f'/rdm_t3/rdm_t3_{ctype}_k{k}_biggest.png'
     else:
-        img_path = res_folder + f'/rdm_t3_{ctype}_k{k}.png'
+        img_path = res_folder + f'/rdm_t3/rdm_t3_{ctype}_k{k}.png'
     plt.savefig(img_path)
     plt.clf()
 
@@ -667,26 +873,42 @@ def rdm_t3(ctype='hierarch', k=60, sorted=False):
 def rdm_t3_sim(k=60, sorted=True):
 
     if sorted == 'biggest':
-        # Calculate similarity between cluster-size based sorted kmeans and hierarchical rdms
 
+        # Calculate similarity between cluster-size based sorted kmeans and hierarchical rdms
         ks = [*range(20, 110, 10)]  
         cor_dict = {}
         cor_dict['scenes'] = []
         cor_dict['actions'] = []
+        vars_oi = ['actions', 'scenes']
+        n_features = 512
+        n_stimuli  = 1000
 
         for k in ks:
             with open(f'/scratch/azonneveld/rsa/rdms/rdm_t3_hierarch_k{k}_biggest', 'rb') as f:
                 h_rdms = pickle.load(f)
             
-            with open(f'/scratch/azonneveld/rsa/rdms/rdm_t3_kmean_k{k}_biggest', 'rb') as f:
-                k_rdms = pickle.load(f)
-    
-            keys = h_rdms.keys()
-            for key in keys:
-                cor = pearsonr(h_rdms[key].ravel(), k_rdms[key].ravel())
-                cor_dict[key].append(cor[0])
-        
+            with open(f'/scratch/azonneveld/clustering/ordering/hierarch_k{k}_biggest', 'rb') as f:
+                h_order = pickle.load(f)
+            
+            with open(f'/scratch/azonneveld/clustering/centroids/kmean_k{k}.pkl', 'rb') as f:
+                centroids = pickle.load(f)
+            
+            for var in vars_oi:
+                var_centroids = centroids[var]
+                var_order = h_order[var] - 1 #bc starts at 1 instead of 0
 
+                # Fill kmean centroid matrix based on hierarchical cluster order
+                centroid_m = np.zeros((n_stimuli, n_features))
+                for i in range(n_stimuli):
+                    h_index = var_order[i] 
+                    centroid_m[i, :] = var_centroids[h_index]
+                
+                k_rdm = pairwise_distances(centroid_m, metric='euclidean')
+                
+                # Calc correlation 
+                cor = pearsonr(squareform(h_rdms[var]), squareform(k_rdm)) 
+                cor_dict[var].append(cor[0])
+        
         fig, ax = plt.subplots(1, 1,  dpi = 300)
         ax.plot(ks, cor_dict['actions'], label='actions', color='red', marker='.')
         ax.plot(ks, cor_dict['scenes'], label='scenes', color='green', marker='.')
@@ -694,7 +916,7 @@ def rdm_t3_sim(k=60, sorted=True):
         ax.set_xlabel("K", fontsize=10)
         ax.set_ylabel("Pearson r", fontsize=10)
         ax.legend(labels=['actions', 'scenes'])
-        img_path = res_folder + f'/rdm_t3_corplot.png'
+        img_path = res_folder + f'/rdm_t3/rdm_t3_corplot.png'
         plt.savefig(img_path)
         plt.clf()
     
@@ -713,13 +935,21 @@ def rdm_t3_sim(k=60, sorted=True):
 
 
 # Type 2 RDM analysis
-# global_emb()
-# calc_t2_rdms('global', sort=True)
+# global_emb('objects', ob_type='freq')
+# global_emb('objects', ob_type='sentence')
+# calc_t2_rdms('global', sort=True, ob_type='freq')
+# calc_t2_rdms('global', sort=True, ob_type='sentence')
+# calc_t2_rdms('global', sort=False, ob_type='freq')
+# calc_t2_rdms('global', sort=False, ob_type='sentence')
 # calc_t2_rdms('derived', sort=True)
 # calc_t2_rdms('global', sort=False)
 # calc_t2_rdms('derived', sort=False)
 # calc_t2_rdms('first')
-# plot_t2_rdms('global', sort=True)
+# plot_t2_rdms('global', sort=False, ob_type='freq')
+# plot_t2_rdms('global', sort=False, ob_type='sentence')
+# rdm_t2_obj_sim()
+rdm_t2_label_sim(ob_type='freq')
+rdm_t2_label_sim(ob_type='sentence')
 # plot_t2_rdms('derived', sort=True)
 # plot_t2_rdms('global', sort=False)
 # plot_t2_rdms('derived', sort=False)
@@ -728,8 +958,10 @@ def rdm_t3_sim(k=60, sorted=True):
 
 
 # Type 3 RDM analysis
-ks = [*range(20, 110, 10)]  
-for k in ks:
-    rdm_t3(ctype='kmean', sorted='biggest', k=k)
-    rdm_t3(ctype='hierarch', sorted='biggest', k=k)
+# ks = [*range(20, 110, 10)]  
+# for k in ks:
+#     rdm_t3(ctype='kmean', sorted='biggest', k=k)
+    # rdm_t3(ctype='hierarch', sorted='biggest', k=k)
+
+# rdm_t3_sim(sorted='biggest')
 

@@ -55,8 +55,13 @@ fit_folder = '/scratch/azonneveld/clustering/fits'
 with open(f'/scratch/azonneveld/rsa/md_global.pkl', 'rb') as f:
     md = pickle.load(f)
 
-# Load feature matrices
-with open(f'/scratch/azonneveld/rsa/fm_guse_glb.pkl', 'rb') as f: 
+# Load feature matrices --> for different ob_types
+ob_type = 'freq'
+if ob_type == 'freq':
+    with open(f'/scratch/azonneveld/rsa/fm_guse_glb_freq.pkl', 'rb') as f: 
+        fms = pickle.load(f)
+else:
+    with open(f'/scratch/azonneveld/rsa/fm_guse_glb_sentence.pkl', 'rb') as f: 
         fms = pickle.load(f)
 
 
@@ -66,7 +71,7 @@ def ex_kmeans(fms, zet, var, n_clusters = 8, max_iter = 300, r_state = 0):
 
     return kmeans
 
-def ex_hierarch(fms, zet, var, thres=None, n_clusters=None, linkage='ward'):
+def ex_hierarch(fms, zet, var,  thres=None, n_clusters=None, linkage='ward'):
     fm = fms[zet][var]
     agglo = AgglomerativeClusteringWithPredict(distance_threshold=thres, n_clusters=n_clusters, compute_full_tree=True, linkage=linkage, compute_distances=True).fit_predict(fm)
 
@@ -124,21 +129,21 @@ def elbow_plot(fms, zet, var, clus_range = range(5, 10), its = 5, c_type='kmean'
         ax.set_title(f'K means {zet} {var}, its = {its}')
         fig.tight_layout()
 
-        img_path = res_folder + f'/kmeans_elbow_{zet}_{var}.png'
+        img_path = res_folder + f'/kmeans_elbow_{zet}_{var}_{ob_type}.png'
         plt.savefig(img_path)
         plt.clf()
 
-        # Centroid variability between iterations
-        fig, ax = plt.subplots(1,1)
-        sns.lineplot(clus_range, all_av_cors)
-        ax.set_ylabel('Spearman-r cor between iterations')
-        ax.set_xlabel('N of clusters')
-        ax.set_title(f'K means {zet} {var}, its = {its}')
-        fig.tight_layout()
+        # # Centroid variability between iterations
+        # fig, ax = plt.subplots(1,1)
+        # sns.lineplot(clus_range, all_av_cors)
+        # ax.set_ylabel('Spearman-r cor between iterations')
+        # ax.set_xlabel('N of clusters')
+        # ax.set_title(f'K means {zet} {var}, its = {its}')
+        # fig.tight_layout()
 
-        img_path = res_folder + f'/kmeans_cor_{zet}_{var}.png'
-        plt.savefig(img_path)
-        plt.clf()
+        # img_path = res_folder + f'/kmeans_cor_{zet}_{var}.png'
+        # plt.savefig(img_path)
+        # plt.clf()
 
     elif c_type == 'hierarch':
 
@@ -190,7 +195,7 @@ def elbow_plot(fms, zet, var, clus_range = range(5, 10), its = 5, c_type='kmean'
             plt.axvline(x=best_thres, color='orange', label=f'optimal threshold ({round(best_thres, 2)})')
 
             fig.tight_layout()
-            img_path = res_folder + f'/hierarch_elbow_{zet}_{var}_{linkage}_thres.png'
+            img_path = res_folder + f'/hierarch_elbow_{zet}_{var}_{linkage}_{ob_type}_thres.png'
 
         else:
 
@@ -221,7 +226,7 @@ def elbow_plot(fms, zet, var, clus_range = range(5, 10), its = 5, c_type='kmean'
             ax.set_xlabel('K')
             ax.set_title(f'Hierach {zet} {var}')
             fig.tight_layout()
-            img_path = res_folder + f'/hierarch_elbow_{zet}_{var}_{linkage}.png'
+            img_path = res_folder + f'/hierarch_elbow_{zet}_{var}_{linkage}_{ob_type}.png'
 
 
         plt.savefig(img_path)
@@ -230,11 +235,11 @@ def elbow_plot(fms, zet, var, clus_range = range(5, 10), its = 5, c_type='kmean'
     # Save best fit
     if c_type == 'hierarch':
         linkage = "_" + linkage
-    with open(fit_folder + f'/{c_type}_bf_{zet}_{var}{linkage}.pkl', 'wb') as f:
+    with open(fit_folder + f'/{c_type}_bf_{zet}_{var}{linkage}_{ob_type}.pkl', 'wb') as f:
         pickle.dump(best_fit, f)
     
     # Save all fits
-    with open(fit_folder + f'/{c_type}_all_{zet}_{var}{linkage}.pkl', 'wb') as f:
+    with open(fit_folder + f'/{c_type}_all_{zet}_{var}{linkage}_{ob_type}.pkl', 'wb') as f:
         pickle.dump(all_fits, f)
 
 def fits_variation_plot(zet, var, c_type, linkage, var_type='median'):
@@ -317,10 +322,10 @@ def visual_inspect(zet, var, mds=True, count=True, k='bf', ctype='kmean', linkag
         linkage = "_" + linkage
 
     if k=='bf':
-        with open(fit_folder + f'/{ctype}_bf_{zet}_{var}{linkage}.pkl', 'rb') as f: 
+        with open(fit_folder + f'/{ctype}_bf_{zet}_{var}{linkage}_{ob_type}.pkl', 'rb') as f: 
             fit = pickle.load(f)
     else:
-        with open(fit_folder + f'/{ctype}_k{k}_{zet}_{var}{linkage}.pkl', 'rb') as f: 
+        with open(fit_folder + f'/{ctype}_k{k}_{zet}_{var}{linkage}_{ob_type}.pkl', 'rb') as f: 
             fit = pickle.load(f)
 
     
@@ -347,7 +352,7 @@ def visual_inspect(zet, var, mds=True, count=True, k='bf', ctype='kmean', linkag
         hover.tooltips={"word": "@words",
                         "clust": "@clust"}
 
-        bp.output_file(filename=f"/scratch/azonneveld/clustering/plots/{ctype}_mds_{zet}_{var}_k{k}_{linkage}.html", title="mds-overview")
+        bp.output_file(filename=f"/scratch/azonneveld/clustering/plots/{ctype}_mds_{zet}_{var}_k{k}_{linkage}_{ob_type}.html", title="mds-overview")
         bp.save(mds_plot)
 
     # Cluster count plot
@@ -361,7 +366,7 @@ def visual_inspect(zet, var, mds=True, count=True, k='bf', ctype='kmean', linkag
         ax.set_ylabel('Count')
         ax.set_xlabel('Clusters')
         fig.tight_layout()
-        img_path = res_folder + f'/{ctype}_count_{zet}_{var}_k{k}_{linkage}.png'
+        img_path = res_folder + f'/{ctype}_count_{zet}_{var}_k{k}_{linkage}_{ob_type}.png'
         plt.savefig(img_path)
         plt.clf()
 
@@ -378,7 +383,7 @@ def sample_ks(zet, var, clus_range, ctype='kmean', linkage=''):
             fit = ex_hierarch(fms, zet=zet, var=var, n_clusters=k, linkage=linkage)
             link_label  = '_' + linkage
 
-        with open(fit_folder + f'/{ctype}_k{k}_{zet}_{var}{link_label}.pkl', 'wb') as f:
+        with open(fit_folder + f'/{ctype}_k{k}_{zet}_{var}{link_label}_{ob_type}.pkl', 'wb') as f:
             pickle.dump(fit, f)
         
         visual_inspect(zet=zet, var=var, k=k, ctype=ctype, linkage=linkage)
@@ -388,10 +393,10 @@ def plot_dendogram(zet, var, linkage, p=100, k='bf', **kwargs):
 
     if k == 'bf':
         # Load best fit
-        with open(fit_folder + f'hierarch_bf_{zet}_{var}.pkl', 'rb') as f: 
+        with open(fit_folder + f'hierarch_bf_{zet}_{var}_{linkage}_{ob_type}.pkl', 'rb') as f: 
             fit = pickle.load(f)
     else:
-        with open(fit_folder + f'hierarch_k{k}_{zet}_{var}.pkl', 'rb') as f: 
+        with open(fit_folder + f'hierarch_k{k}_{zet}_{var}_{linkage}_{ob_type}.pkl', 'rb') as f: 
             fit = pickle.load(f)
 
 
@@ -425,7 +430,7 @@ def plot_dendogram(zet, var, linkage, p=100, k='bf', **kwargs):
     ax.set_title(f'{zet} {var} {linkage}, coph_c={round(c, 3)}')
     ax.set_ylabel('Distance')
     fig.tight_layout()
-    img_path = res_folder + f'/dendogram_{zet}_{var}_{linkage}.png'
+    img_path = res_folder + f'/dendogram_{zet}_{var}_{linkage}_{ob_type}.png'
     plt.savefig(img_path)
     plt.clf()
     
@@ -457,11 +462,12 @@ def load_FAISS(var):
     return embeddings_ds
 
 
-def cluster_content(zet, var, FAISS, linkage='ward', k=2, vid=True, pred=False):
+def cluster_content(zet, var, FAISS, ctype='hierarch', linkage='ward', k=2, vid=True, pred=False):
     """
     Plots histogram of labels per cluster.
     - zet: train/test
     - var: objecst/actions/scenes
+    - ctype: hierarchical or kmean
     - linkage: linkage type of hierarchical clustering fit (default = ward)
     - k: nr of clusters
     - vid: assesment based on clustering of derived labels of actual video dataset (True/False)
@@ -471,7 +477,11 @@ def cluster_content(zet, var, FAISS, linkage='ward', k=2, vid=True, pred=False):
     print(f'Evaluating cluster content k={k}')
 
     # Get fit and according centroids
-    fit = ex_hierarch(fms=fms, zet=zet, var=var, n_clusters=k, linkage=linkage)              
+    if ctype == 'hierarch':
+        fit = ex_hierarch(fms=fms, zet=zet, var=var, n_clusters=k, linkage=linkage)   
+    elif ctype == 'kmean':
+        fit =  ex_kmeans(fms=fms, zet=zet, var=var, n_clusters=k)     
+
     cluster_labels = fit.labels_.tolist()
     centroids = fit.cluster_centers_
     n_clusters = len(np.unique(cluster_labels))
@@ -482,38 +492,49 @@ def cluster_content(zet, var, FAISS, linkage='ward', k=2, vid=True, pred=False):
         # Automated centroid bases cluster labels
         centroid_labels = []
         for i in range(n_clusters):
+            # cluster_id = cluster_order[i]
             centroid = centroids[i, :].astype(np.float32)
             score, sample = FAISS.get_nearest_examples("embeddings", centroid, k=1)
             label = sample['labels'][0]
             centroid_labels.append(label)
+
             clus_info = (cluster_counts[i], label)
             print(clus_info)
-
+        
+        # Order on cluster size
+        centroid_df = pd.DataFrame()
+        centroid_df['cluster'] = clusters_unique
+        centroid_df['size'] = cluster_counts
+        centroid_df['centroid_label'] = centroid_labels
+        centroid_df = centroid_df.sort_values(by=['size'], ascending=False)
+        cluster_order = centroid_df['cluster'].tolist()
+        
         der_col = 'glb_' + var + '_lab'
         md_select = md[md['set']==zet][der_col].reset_index(drop=True).to_frame(name='label')
         md_select['cluster'] = cluster_labels
 
         count_df = md_select.groupby(['cluster','label']).size().to_frame(name='count').reset_index()
-        count_df = count_df.sort_values(by=['cluster', 'count'],
-                        )
+        count_df = count_df.sort_values(by=['cluster', 'count'])
 
         ncols = 5
         nrows = n_clusters // ncols + (n_clusters % ncols > 0)
 
         fig = plt.figure(dpi=300, figsize=(40, 30))
         for i in range(n_clusters):
-            cluster_df = count_df[count_df['cluster']== i]
+            cluster = cluster_order[i]
+            centroid_label = centroid_labels[cluster]
+            cluster_df = count_df[count_df['cluster']== cluster]
             cluster_size = cluster_df['count'].sum() 
-            centroid_label = centroid_labels[i]
+
             ax  = plt.subplot(nrows, ncols, i+1)       
             sns.barplot(data = cluster_df, x='label', y='count', ax = ax)
             ax.set_xticklabels(ax.get_xticklabels(), rotation=90, size=6)
             ax.set_xlabel('')
-            ax.set_title(f'cluster {i} ({cluster_size}): {centroid_label}', size=8)
-        fig.suptitle(f'{linkage}, k={n_clusters}')
+            ax.set_title(f'cluster {cluster} ({cluster_size}): {centroid_label}', size=8)
+        fig.suptitle(f'{ctype}, k={n_clusters}')
         fig.tight_layout()
         fig.subplots_adjust(top=0.88)
-        img_path = res_folder + f'/cluster_content/{var}/{linkage}_k{k}.png'
+        img_path = res_folder + f'/cluster_content/{ctype}/{var}/k{k}.png'
         plt.savefig(img_path)
         plt.clf()
 
@@ -554,7 +575,7 @@ def cluster_content(zet, var, FAISS, linkage='ward', k=2, vid=True, pred=False):
         fig.suptitle(f'{linkage}, k={n_clusters}')
         fig.tight_layout()
         fig.subplots_adjust(top=0.88)
-        img_path = res_folder + f'/cluster_content/{var}/pred_{linkage}_k{k}.png'
+        img_path = res_folder + f'/cluster_content/{ctype}/{var}/pred_{linkage}_k{k}.png'
         plt.savefig(img_path)
         plt.clf()
 
@@ -575,11 +596,15 @@ def cluster_content(zet, var, FAISS, linkage='ward', k=2, vid=True, pred=False):
 #         print(clus_info)
 
 
-def dendogram_labels(zet, var, linkage='ward', ks=50):
+def dendogram_labels(zet, var, ctype='hierarch', linkage='ward', ks=50):
     FAISS = load_FAISS(var=var)
     
-    for k in range(2, ks):
-        cluster_content(zet=zet, var=var, FAISS= FAISS, linkage=linkage, k=k)
+    if ctype == 'hierarch':
+        for k in range(2, ks):
+            cluster_content(zet=zet, var=var, FAISS= FAISS, ctype='hierarch', linkage=linkage, k=k)
+    elif ctype == 'kmean':
+        for k in range(2, ks):
+            cluster_content(zet=zet, var=var, FAISS= FAISS, ctype='kmean', linkage=linkage, k=k)
 
 
     
@@ -587,16 +612,17 @@ def dendogram_labels(zet, var, linkage='ward', ks=50):
 
 
 # --------- K-mean
-# elbow_plot(fms, zet='train', var='actions', clus_range=range(2, 200), its=10, ctype='kmeans')
-# elbow_plot(fms, zet='train', var='scenes', clus_range=range(2, 200), its=10, ctype='kmeans')
-# elbow_plot(fms, zet='train', var='objects', clus_range=range(2, 200), its=3, ctype='kmeans')
+# elbow_plot(fms, zet='train', var='actions', clus_range=range(2, 200), its=10, c_type='kmean')
+# elbow_plot(fms, zet='train', var='scenes', clus_range=range(2, 200), its=10, c_type='kmean')
+elbow_plot(fms, zet='train', var='objects', clus_range=range(2, 200), its=3, c_type='kmean')
 
 # visual_inspect(zet='train', var='actions', k=40, ctype='kmean')
 # visual_inspect(zet='train', var='actions', k=40, ctype='hierarch')
 
 # Sample different k's
-# sample_ks(zet='train', var='actions', clus_range=[20, 30, 40, 50, 60, 70, 80, 90, 100], ctype='kmean')
-# sample_ks(zet='train', var='scenes', clus_range=[20, 30, 40, 50, 60, 70, 80, 90, 100], ctype='kmean')
+# sample_ks(zet='train', var='actions', clus_range=[20, 30, 40, 50, 60, 70, 80, 90, 100], c_type='kmean')
+# sample_ks(zet='train', var='scenes', clus_range=[20, 30, 40, 50, 60, 70, 80, 90, 100], c_type='kmean')
+sample_ks(zet='train', var='objects', clus_range=[20, 30, 40, 50, 60, 70, 80, 90, 100], c_type='kmean')
 
 # -------- Hierarchical
 # elbow_plot(fms, zet='train', var='scenes', clus_range=np.arange(0.1, 2, 0.01), c_type='hierarch', linkage='ward', cb=False)  #threshold
@@ -629,5 +655,7 @@ def dendogram_labels(zet, var, linkage='ward', ks=50):
 
 
 # Asses cluster content for different points hierarchy
-# dendogram_labels(zet='train', var='actions', linkage='ward', ks=3)
-dendogram_labels(zet='train', var='scenes', linkage='ward', ks=20) # adjust so also applicable to kmeans?
+# dendogram_labels(zet='train', var='actions', ctype='hierarch', linkage='ward', ks=70)
+# dendogram_labels(zet='train', var='scenes', ctype='hierarch', linkage='ward', ks=70)
+# dendogram_labels(zet='train', var='actions', ctype='kmean', linkage='ward', ks=70)
+# dendogram_labels(zet='train', var='scenes', ctype='kmean', linkage='ward', ks=70)
