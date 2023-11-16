@@ -358,8 +358,10 @@ def global_emb(var, ob_type='freq'):
 
         if ob_type == 'freq':
 
+            shared_max_count = 0
+            shared_max_ids = []
+
             # Calc global emb
-            print(f'calculating global emb {var}{ob_type}')
             global_embs = []
             global_labels = []
 
@@ -375,9 +377,16 @@ def global_emb(var, ob_type='freq'):
                         if obs != '--':
                             labels_list.append(obs)
                 
-                values, counts = np.unique(labels_list, return_counts=True)
+                values, counts = np.unique(labels_list, return_counts=True)             
                 global_label = values[np.argmax(counts)]
                 global_labels.append(global_label)
+
+                # Check for shared maxs
+                maximum = np.max(counts)
+                max_ids = np.where(counts==maximum)[0]
+                if len(max_ids) > 1:
+                    shared_max_count = shared_max_count + 1
+                    shared_max_ids.append(i)
 
                 global_emb = wv_dict_all[global_label] 
                 global_embs.append(global_emb)
@@ -386,6 +395,8 @@ def global_emb(var, ob_type='freq'):
             lab_col = 'glb_' + var + '_lab'
             global_df[emb_col] = global_embs
             global_df[lab_col] = global_labels
+        
+            print(f"shared max count {shared_max_count}")
         
         elif ob_type == 'sentence':
             
@@ -402,31 +413,36 @@ def global_emb(var, ob_type='freq'):
             embeddings_ds.add_faiss_index(column='embeddings')  
 
             # Calc global emb
-            print(f'calculating global emb {var} {ob_type}')
             global_embs = []
             global_labels = []
             global_deriveds = []
 
+            # For every video in dataset
             for i in range(len(md)):
-            # for i in range(100):
                 labels = md[var].iloc[i]
                 
-                # Get all unique labels
-                labels_list = []
+                obs_embs = np.zeros((len(labels), 512))
+
                 for j in range(len(labels)):
                     single_obs = labels[j]
+                    labels_list = []
 
                     for obs in single_obs:
                         if obs != '--':
                             labels_list.append(obs)
+                    
+                    # Get 'sentence' embedding per observer
+                    if len(labels_list) > 0:
+                        sentence = [" ".join(labels_list)]
+                    else:
+                        sentence= label_list
+                    emb = model(sentence).numpy()[0]
+                    obs_embs[j, :] = emb
                 
-                # Only unique words or also repetitions?
-                values, counts = np.unique(labels_list, return_counts=True)
-                
-                # Present all unique labels in sentence manner to GUSE
-                sentence = [" ".join(values)]
-                global_emb = model(sentence).numpy()[0]
+                # Average over observers
+                global_emb = np.mean(obs_embs, axis=0).astype(np.float32)
 
+                # Get nearest neighbour for global embedding
                 score, sample = embeddings_ds.get_nearest_examples("embeddings", global_emb, k=1)
                 global_label = sample['labels'][0] 
                 global_derived = wv_dict_all[global_label]
@@ -935,7 +951,7 @@ def rdm_t3_sim(k=60, sorted=True):
 
 
 # Type 2 RDM analysis
-# global_emb('objects', ob_type='freq')
+global_emb('objects', ob_type='freq')
 # global_emb('objects', ob_type='sentence')
 # calc_t2_rdms('global', sort=True, ob_type='freq')
 # calc_t2_rdms('global', sort=True, ob_type='sentence')
@@ -948,8 +964,8 @@ def rdm_t3_sim(k=60, sorted=True):
 # plot_t2_rdms('global', sort=False, ob_type='freq')
 # plot_t2_rdms('global', sort=False, ob_type='sentence')
 # rdm_t2_obj_sim()
-rdm_t2_label_sim(ob_type='freq')
-rdm_t2_label_sim(ob_type='sentence')
+# rdm_t2_label_sim(ob_type='freq')
+# rdm_t2_label_sim(ob_type='sentence')
 # plot_t2_rdms('derived', sort=True)
 # plot_t2_rdms('global', sort=False)
 # plot_t2_rdms('derived', sort=False)
@@ -965,3 +981,4 @@ rdm_t2_label_sim(ob_type='sentence')
 
 # rdm_t3_sim(sorted='biggest')
 
+rdm_t3(ctype='kmean', k=40)
