@@ -18,12 +18,30 @@ from statsmodels.stats.multitest import multipletests
 file_path = '/scratch/azonneveld/downloads/annotations_humanScenesObjects.json'
 md = pd.read_json(file_path).transpose()
 
-res_folder = '/scratch/azonneveld/rsa/plots' 
-
 zets = ['train', 'test']
 vars = ['objects', 'scenes', 'actions']
 models = ['ft', 'cb_ft', 'skip_ft', 'bert', 'guse']
 metric='euclidean'
+res_folder = '/scratch/azonneveld/rsa/plots' 
+
+
+def load_glob_md(ob_type = 'freq'):
+    new_md = md.copy().reset_index(drop=True)
+
+    for var in vars:
+
+        if var != 'objects':
+            with open(f'/scratch/azonneveld/rsa/global_embs/{var}', 'rb') as f: 
+                global_df = pickle.load(f)
+        else:
+            with open(f'/scratch/azonneveld/rsa/global_embs/{var}_{ob_type}', 'rb') as f: 
+                global_df = pickle.load(f)
+
+        new_md = pd.concat([new_md, global_df], axis=1)
+    
+    return new_md
+
+
 
 class AgglomerativeClusteringWithPredict(AgglomerativeClustering):
     def __init__(self, fname, lname):
@@ -54,6 +72,7 @@ class AgglomerativeClusteringWithPredict(AgglomerativeClustering):
 
 def pearsonr_pval(x,y):
         return pearsonr(x,y)[1]
+
 
 # ---------------- RDM type 1: all labels (not per video)
 def calc_t1_rdms(): 
@@ -435,7 +454,7 @@ def global_emb(var, ob_type='freq'):
                     if len(labels_list) > 0:
                         sentence = [" ".join(labels_list)]
                     else:
-                        sentence= label_list
+                        sentence= labels_list
                     emb = model(sentence).numpy()[0]
                     obs_embs[j, :] = emb
                 
@@ -462,22 +481,6 @@ def global_emb(var, ob_type='freq'):
         with open(f'/scratch/azonneveld/rsa/global_embs/objects_{ob_type}', 'wb') as f:
             pickle.dump(global_df, f)
 
-
-def load_glob_md(ob_type = 'freq'):
-    new_md = md.copy().reset_index(drop=True)
-
-    for var in vars:
-
-        if var != 'objects':
-            with open(f'/scratch/azonneveld/rsa/global_embs/{var}', 'rb') as f: 
-                global_df = pickle.load(f)
-        else:
-            with open(f'/scratch/azonneveld/rsa/global_embs/{var}_{ob_type}', 'rb') as f: 
-                global_df = pickle.load(f)
-
-        new_md = pd.concat([new_md, global_df], axis=1)
-    
-    return new_md
 
 
 def calc_t2_rdms(emb_type='global', sort=False,  ob_type = 'freq'): 
@@ -744,31 +747,34 @@ def rdm_t2_emb_type_sim():
 
 # ------------- RDM type 3 (cluster based)
 
-def rdm_t3(ctype='hierarch', k=60, sorted=False):
+def rdm_t3(ctype='hierarch', k=60, sorted=False, ob_type='freq', plot=False):
     
-    # Load global embeddings df
-    with open(f'/scratch/azonneveld/rsa/md_global.pkl', 'rb') as f: 
-        md_global = pickle.load(f)
+   # Load global embeddings df 
+    md_global = load_glob_md(ob_type=ob_type)
 
     # Select only train set
     zet ='train'
     md_select = md_global[md_global['set']==zet]
     n_stimuli = len(md_select)
-    vars_oi = ['scenes', 'actions']
     
     centroid_matrices = {}
     rdms = {}
     orderings = {}
     centroids_dict = {}
+    
+    if ctype=='hierarch':
+        linkage = '_ward'
+    else:
+        linkage=''
 
-    for var in vars_oi:
+    for var in vars:
 
         # Load cluster data
-        if ctype == 'hierarch':
-            with open(f'/scratch/azonneveld/clustering/fits/{ctype}_k{k}_train_{var}_ward.pkl', 'rb') as f: 
+        if var == 'objects':
+            with open(f'/scratch/azonneveld/clustering/fits/{ctype}_k{k}_train_{var}{linkage}_{ob_type}.pkl', 'rb') as f: 
                 clusters = pickle.load(f)
         else:
-            with open(f'/scratch/azonneveld/clustering/fits/{ctype}_k{k}_train_{var}.pkl', 'rb') as f: 
+            with open(f'/scratch/azonneveld/clustering/fits/{ctype}_k{k}_train_{var}{linkage}.pkl', 'rb') as f: 
                 clusters = pickle.load(f)
 
         cluster_labels = clusters.labels_   
@@ -826,20 +832,22 @@ def rdm_t3(ctype='hierarch', k=60, sorted=False):
         rdm = pairwise_distances(centroid_matrix, metric='euclidean')
         rdms[var] = rdm
         centroid_matrices[var] = centroid_matrix
-        orderings[var] = order
+
+        if sorted != False:
+            orderings[var] = order
 
     if sorted == True:
-        with open(f'/scratch/azonneveld/rsa/rdms/rdm_t3_{ctype}_k{k}_sorted', 'wb') as f:
+        with open(f'/scratch/azonneveld/rsa/rdms/t3/rdm_t3_{ctype}_k{k}_sorted', 'wb') as f:
             pickle.dump(rdms, f)
         with open(f'/scratch/azonneveld/clustering/ordering/{ctype}_k{k}_sorted', 'wb') as f:
             pickle.dump(orderings, f)
     elif sorted == 'biggest':
-        with open(f'/scratch/azonneveld/rsa/rdms/rdm_t3_{ctype}_k{k}_biggest', 'wb') as f:
+        with open(f'/scratch/azonneveld/rsa/rdms/t3/rdm_t3_{ctype}_k{k}_biggest', 'wb') as f:
             pickle.dump(rdms, f)
         with open(f'/scratch/azonneveld/clustering/ordering/{ctype}_k{k}_biggest', 'wb') as f:
             pickle.dump(orderings, f)
     else:
-        with open(f'/scratch/azonneveld/rsa/rdms/rdm_t3_{ctype}_k{k}', 'wb') as f:
+        with open(f'/scratch/azonneveld/rsa/rdms/t3/rdm_t3_{ctype}_k{k}', 'wb') as f:
             pickle.dump(rdms, f)
     
     if ctype == 'kmean':
@@ -847,98 +855,85 @@ def rdm_t3(ctype='hierarch', k=60, sorted=False):
             pickle.dump(centroids_dict, f)
 
 
-    # Get max and min of all rdms 
-    maxs = []
-    mins = []
-    for var in vars_oi:
-        rdm = rdms[var]
-        max = np.max(rdm)
-        min = np.max(rdm)
-        maxs.append(max)
-        mins.append(min)
-    max = np.max(np.asarray(maxs))
-    min = np.min(np.asarray(mins))
+    if plot == True:
 
-    # Create plots
-    fig, ax = plt.subplots(1, 2, dpi = 500)
-    fig.suptitle(f'Type 3 HO RDMs {ctype} k={k}, sorted={sorted}')
+        # Get max and min of all rdms 
+        maxs = []
+        mins = []
+        for var in vars:
+            rdm = rdms[var]
+            max = np.max(rdm)
+            min = np.max(rdm)
+            maxs.append(max)
+            mins.append(min)
+        max = np.max(np.asarray(maxs))
+        min = np.min(np.asarray(mins))
 
-    for i in range(len(vars_oi)):
-        var = vars_oi[i]
-        rdm = rdms[var]
- 
-        im = ax[i].imshow(rdm, vmin=0, vmax=1.4) #vmax = 1.4 to compare with basic-order
-        ax[i].set_title(f'train {var}', fontsize=8)
-        ax[i].set_xlabel("", fontsize=10)
-        ax[i].set_ylabel("", fontsize=10)
+        # Create plots
+        fig, ax = plt.subplots(1, 2, dpi = 500)
+        fig.suptitle(f'Type 3 HO RDMs {ctype} k={k}, sorted={sorted}')
 
-    fig.tight_layout()
-    cbar = fig.colorbar(im, ax=ax.ravel().tolist())
-    cbar.ax.set_ylabel(f'Euclidean distance', fontsize=12)
+        for i in range(len(vars)):
+            var = vars[i]
+            rdm = rdms[var]
+    
+            im = ax[i].imshow(rdm, vmin=0, vmax=1.4) #vmax = 1.4 to compare with basic-order
+            ax[i].set_title(f'train {var}', fontsize=8)
+            ax[i].set_xlabel("", fontsize=10)
+            ax[i].set_ylabel("", fontsize=10)
 
-    if sorted == True:
-        img_path = res_folder + f'/rdm_t3/rdm_t3_{ctype}_k{k}_sorted.png'
-    elif sorted == 'biggest':
-        img_path = res_folder + f'/rdm_t3/rdm_t3_{ctype}_k{k}_biggest.png'
-    else:
-        img_path = res_folder + f'/rdm_t3/rdm_t3_{ctype}_k{k}.png'
-    plt.savefig(img_path)
-    plt.clf()
+        fig.tight_layout()
+        cbar = fig.colorbar(im, ax=ax.ravel().tolist())
+        cbar.ax.set_ylabel(f'Euclidean distance', fontsize=12)
 
-
-def rdm_t3_sim(k=60, sorted=True):
-
-    if sorted == 'biggest':
-
-        # Calculate similarity between cluster-size based sorted kmeans and hierarchical rdms
-        ks = [*range(20, 110, 10)]  
-        cor_dict = {}
-        cor_dict['scenes'] = []
-        cor_dict['actions'] = []
-        vars_oi = ['actions', 'scenes']
-        n_features = 512
-        n_stimuli  = 1000
-
-        for k in ks:
-            with open(f'/scratch/azonneveld/rsa/rdms/rdm_t3_hierarch_k{k}_biggest', 'rb') as f:
-                h_rdms = pickle.load(f)
-            
-            with open(f'/scratch/azonneveld/clustering/ordering/hierarch_k{k}_biggest', 'rb') as f:
-                h_order = pickle.load(f)
-            
-            with open(f'/scratch/azonneveld/clustering/centroids/kmean_k{k}.pkl', 'rb') as f:
-                centroids = pickle.load(f)
-            
-            for var in vars_oi:
-                var_centroids = centroids[var]
-                var_order = h_order[var] - 1 #bc starts at 1 instead of 0
-
-                # Fill kmean centroid matrix based on hierarchical cluster order
-                centroid_m = np.zeros((n_stimuli, n_features))
-                for i in range(n_stimuli):
-                    h_index = var_order[i] 
-                    centroid_m[i, :] = var_centroids[h_index]
-                
-                k_rdm = pairwise_distances(centroid_m, metric='euclidean')
-                
-                # Calc correlation 
-                cor = pearsonr(squareform(h_rdms[var]), squareform(k_rdm)) 
-                cor_dict[var].append(cor[0])
-        
-        fig, ax = plt.subplots(1, 1,  dpi = 300)
-        ax.plot(ks, cor_dict['actions'], label='actions', color='red', marker='.')
-        ax.plot(ks, cor_dict['scenes'], label='scenes', color='green', marker='.')
-        ax.set_title('Relationship kmeans - hierarch RDMs', fontsize=11)
-        ax.set_xlabel("K", fontsize=10)
-        ax.set_ylabel("Pearson r", fontsize=10)
-        ax.legend(labels=['actions', 'scenes'])
-        img_path = res_folder + f'/rdm_t3/rdm_t3_corplot.png'
+        if sorted == True:
+            img_path = res_folder + f'/rdm_t3/rdm_t3_{ctype}_k{k}_sorted.png'
+        elif sorted == 'biggest':
+            img_path = res_folder + f'/rdm_t3/rdm_t3_{ctype}_k{k}_biggest.png'
+        else:
+            img_path = res_folder + f'/rdm_t3/rdm_t3_{ctype}_k{k}.png'
         plt.savefig(img_path)
         plt.clf()
+
+
+def rdm_t3_sim(k=60):
+
+    # Calculate similarity between cluster-size based sorted kmeans and hierarchical rdms
+    ks = [*range(20, 110, 10)]  
+    cor_dict = {}
+    cor_dict['scenes'] = []
+    cor_dict['actions'] = []
+    cor_dict['objects'] = []
+    n_features = 512
+    n_stimuli  = 1000
+
+    for k in ks:
+        with open(f'/scratch/azonneveld/rsa/rdms/t3/rdm_t3_hierarch_k{k}', 'rb') as f:
+            h_rdms = pickle.load(f)
+        
+        with open(f'/scratch/azonneveld/rsa/rdms/t3/rdm_t3_kmean_k{k}', 'rb') as f:
+            k_rdms = pickle.load(f)
+            
+        for var in vars:
+            
+            h_rdm = h_rdms[var]
+            k_rdm = k_rdms[var]
+            
+            # Calc correlation 
+            cor = pearsonr(squareform(h_rdms[var], checks=False), squareform(k_rdm, checks=False)) 
+            cor_dict[var].append(cor[0])
     
-    elif sorted == False:
-        pass
-        # implement part that calculates sim between object/scenes/actions rdms
+    fig, ax = plt.subplots(1, 1,  dpi = 300)
+    ax.plot(ks, cor_dict['actions'], label='actions', color='red', marker='.')
+    ax.plot(ks, cor_dict['scenes'], label='scenes', color='green', marker='.')
+    ax.plot(ks, cor_dict['objects'], label='objects', color='blue', marker='.')
+    ax.set_title('Relationship kmeans - hierarch RDMs', fontsize=11)
+    ax.set_xlabel("K", fontsize=10)
+    ax.set_ylabel("Pearson r", fontsize=10)
+    ax.legend(labels=['actions', 'scenes', 'objects'])
+    img_path = res_folder + f'/rdm_t3/rdm_t3_corplot.png'
+    plt.savefig(img_path)
+    plt.clf()
 
     
 
@@ -951,7 +946,7 @@ def rdm_t3_sim(k=60, sorted=True):
 
 
 # Type 2 RDM analysis
-global_emb('objects', ob_type='freq')
+# global_emb('objects', ob_type='freq')
 # global_emb('objects', ob_type='sentence')
 # calc_t2_rdms('global', sort=True, ob_type='freq')
 # calc_t2_rdms('global', sort=True, ob_type='sentence')
@@ -976,9 +971,8 @@ global_emb('objects', ob_type='freq')
 # Type 3 RDM analysis
 # ks = [*range(20, 110, 10)]  
 # for k in ks:
-#     rdm_t3(ctype='kmean', sorted='biggest', k=k)
-    # rdm_t3(ctype='hierarch', sorted='biggest', k=k)
+#     rdm_t3(ctype='kmean', k=k)
+#     rdm_t3(ctype='hierarch', k=k)
 
-# rdm_t3_sim(sorted='biggest')
+rdm_t3_sim()
 
-rdm_t3(ctype='kmean', k=40)
