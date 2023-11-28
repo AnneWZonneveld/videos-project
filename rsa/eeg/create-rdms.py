@@ -20,8 +20,10 @@ from sklearn.svm import SVC
 sub = '01'
 zscore = True
 data_split = 'train'
-distance_type = 'euclidean'
+distance_type = 'euclidean-cv'
 weighted_class = True
+
+print(f'Running for sub-{sub}, {data_split}, {distance_type}')
 
 # Set random seed for reproducible results
 seed = 20200220
@@ -83,7 +85,6 @@ rdms_array = np.zeros((n_conditions, n_conditions, eeg_data.shape[2]), dtype='fl
 for t in tqdm(range(eeg_data.shape[2])):
 # for t in tqdm(range(2)):
 
-    # TO DO: implement for loop for n of permutations? --> only important when using cross validation
     if distance_type != 'euclidean':
         permutation_array = np.zeros((n_perm, n_conditions, n_conditions), dtype='float32')
 
@@ -190,7 +191,6 @@ for t in tqdm(range(eeg_data.shape[2])):
 
     if distance_type != 'euclidean':
         rdms_array[:, :, t] = np.mean(permutation_array, axis=0).astype('float32')    
-
 
 
 # Save results
