@@ -38,6 +38,11 @@ from sklearn.preprocessing import StandardScaler
 from tqdm import tqdm
 from sklearn.svm import SVC
 import argparse
+import concurrent.futures
+from create_rdms_utils import compute_rdm
+from functools import partial
+from multiprocessing import shared_memory
+from multiprocessing import current_process, cpu_count
 
 
 # Input argurments
@@ -121,110 +126,40 @@ for v1 in range(n_conditions):
         combination = combination + 1
 
 
-# Loop over EEG time points, image-conditions and EEG repetitions
-for t in tqdm(range(eeg_data.shape[2])):
+# Creating shared memory
+shm_name = 'shared_data_permute'
 
-    combination = 0 
-    for v1 in range(n_conditions):
-        for v2 in range(v1):
-            idx_1 = pseudo_order[combination][0]
-            idx_2 = pseudo_order[combination][1]
-            eeg_cond_1 = eeg_data[idx_1,:,t]
-            eeg_cond_2 = eeg_data[idx_2,:,t]
+try:
+    shm = shared_memory.SharedMemory(create=True, size=rdms_array.nbytes, name=shm_name)
+except FileExistsError:
+    shm_old = shared_memory.SharedMemory(shm_name, create=False)
+    shm_old.close()
+    shm_old.unlink()
+    shm = shared_memory.SharedMemory(create=True, size=rdms_array.nbytes, name=shm_name)
 
-            # Select a minimum amount of trials in case repeats are not the 
-            # same between two test image conditions
-            if len(eeg_cond_1) < len(eeg_cond_2):
-                eeg_cond_2 = eeg_cond_2[:len(eeg_cond_1)]
-            elif len(eeg_cond_2) < len(eeg_cond_1):
-                eeg_cond_1 = eeg_cond_1[:len(eeg_cond_2)]
-            
-            # Create pseudo-trials
-            if args.data_split == 'test':
-                n_ptrials_repeats = 4
-            elif args.data_split == 'train':
-                n_ptrials_repeats = 2
-            n_pseudo_trials = int(np.ceil(len(eeg_cond_1) / n_ptrials_repeats))
-            pseudo_data_1 = np.zeros((n_pseudo_trials, eeg_cond_1.shape[1]))
-            pseudo_data_2 = np.zeros((n_pseudo_trials, eeg_cond_2.shape[1]))
+# Create a np.recarray using the buffer of shm
+shm_rdms_array = np.recarray(shape=rdms_array.shape, dtype=rdms_array.dtype, buf=shm.buf)
 
-            for r in range(n_pseudo_trials):
-                idx_start = r * n_ptrials_repeats
-                idx_end = idx_start + n_ptrials_repeats
-                pseudo_data_1[r] = np.mean(eeg_cond_1[idx_start:idx_end],0)
-                pseudo_data_2[r] = np.mean(eeg_cond_2[idx_start:idx_end],0)
-            
-            eeg_cond_1 = pseudo_data_1
-            eeg_cond_2 = pseudo_data_2
+# Copy the data into the shared memory
+np.copyto(shm_rdms_array, rdms_array)
 
-            if args.distance_type == 'euclidean':
-                eeg_cond_1 = np.mean(eeg_cond_1,0)
-                eeg_cond_2 = np.mean(eeg_cond_2,0)
-                distance = np.linalg.norm(eeg_cond_1-eeg_cond_2).astype('float32')
 
-                rdms_array[v1, v2, t] = distance
-                rdms_array[v2, v1, t] = distance
+# Parrallel calculating of RDMs for timepoints
+partial_compute_rdm = partial(compute_rdm,
+                               eeg_data=eeg_data,
+                               pseudo_order=pseudo_order,
+                               data_split=args.data_split,
+                               distance_type= args.distance_type)
 
-                del eeg_cond_1, eeg_cond_2
-            
-            if args.distance_type == 'euclidean-cv':
-                cv_distances = np.zeros(len(eeg_cond_1))
+with concurrent.futures.ProcessPoolExecutor(cpu_count) as executor:
+    ts = range(eeg_data.shape[2])
+    results = executor.map(partial_compute_rdm, ts)
 
-                for r in range(len(eeg_cond_1)):
+# Format data into array
+for t in range(eeg_data.shape[2]):
+    rdm = results[t]
+    rdms_array[:, :, t] = rdm
 
-                    # Define the training/test partitions (LOOCV)
-                    train_cond_1 = np.delete(eeg_cond_1, r, 0)
-                    train_cond_2 = np.delete(eeg_cond_2, r, 0)
-                    dist_train = np.expand_dims(np.mean(train_cond_1, 0) - np.mean(train_cond_2, 0), 0)
-                    
-                    test_cond_1 = np.expand_dims(eeg_cond_1[r], 0)
-                    test_cond_2 = np.expand_dims(eeg_cond_2[r], 0)
-                    dist_test = test_cond_1  - test_cond_2
-
-                    cv_dist = np.dot(dist_train, np.transpose(dist_test)).astype('float32')[0][0] #formula for squared cv euclidean distance?
-                    cv_distances[r] = cv_dist
-                
-                distance = np.mean(cv_distances, dtype='float32') 
-
-                rdms_array[v1, v2, t] = distance
-                rdms_array[v2, v1, t] = distance
-
-            
-            if args.distance_type in ['classification', 'dv-classification']:
-                y_train = np.zeros(((len(eeg_cond_1)-1)*2))
-                y_train[int(len(y_train)/2):] = 1
-                y_test = np.asarray((0, 1))
-                scores = np.zeros(len(eeg_cond_1))
-
-                for r in range(len(eeg_cond_1)):
-
-                    # Define the training/test partitions
-                    X_train = np.append(np.delete(eeg_cond_1, r, 0),
-                        np.delete(eeg_cond_2, r, 0), 0)
-                    X_test = np.append(np.expand_dims(eeg_cond_1[r], 0),
-                        np.expand_dims(eeg_cond_2[r], 0), 0)
-                    
-                    # Train the classifier
-                    dec_svm = SVC(kernel='linear')
-                    dec_svm.fit(X_train, y_train)
-                    y_pred = dec_svm.predict(X_test)
-
-                    # Test the classifier
-                    if args.distance_type == 'dv-classification':
-                        # Weighting of decision values (distance to hyper plane / norm weights), as in gugguenmos et al., 2018
-                        decision_values = abs(dec_svm.decision_function(X_test) / np.linalg.norm(dec_svm.coef_))
-                        weighted_score = sum(decision_values *((y_pred == y_test) - 0.5))/ len(y_test)
-                        scores[r] = weighted_score
-                    else: 
-                        scores[r]= sum((y_pred == y_test) - 0.5)/ len(y_test)
-                        # scores[r] = sum(y_pred == y_test) / len(y_test)
-
-                score = np.mean(scores).astype('float32')
-                
-                rdms_array[v1, v2, t] = score
-                rdms_array[v2, v1, t] = score
-
-            combination = combination + 1
 
 # Save results
 results_dict = {
