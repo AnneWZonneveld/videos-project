@@ -9,27 +9,34 @@ from sklearn.metrics import pairwise_distances
 from scipy.spatial.distance import squareform
 from sklearn.utils import resample
 import tensorflow as tf
-import tensorflow_hub as hub
-from scipy.stats import pearsonr
-from statsmodels.stats.multitest import multipletests
 from sklearn.preprocessing import StandardScaler
 from tqdm import tqdm
 from sklearn.svm import SVC
 import argparse
+from functools import partial
+from multiprocessing import shared_memory
+from multiprocessing import current_process, cpu_count
+import time
 
 
-def compute_rdm(t, eeg_data, pseudo_order, data_split='train', distance_type='euclidean'):
+def compute_rdm(t, data_shape, pseudo_order, shm, data_split='train', distance_type='euclidean'):
+
+    print(f'compute rdm for t={t}')
+    tic = time.time()
 
     if data_split=='train':
         n_conditions = 1000
     elif data_split=='test':
         n_conditions == 102
+
+    existing_shm = shared_memory.SharedMemory(name=shm)
+    eeg_data = np.ndarray(data_shape, dtype='float32', buffer=existing_shm.buf)
     
     rdm_array = np.zeros((n_conditions, n_conditions))
-
+    
     combination = 0 
-    for v1 in range(n_conditions):
-        for v2 in range(v1):
+    for v1 in tqdm(range(n_conditions)):
+        for v2 in tqdm(range(v1)):
             idx_1 = pseudo_order[combination][0]
             idx_2 = pseudo_order[combination][1]
             eeg_cond_1 = eeg_data[idx_1,:,t]
@@ -63,7 +70,8 @@ def compute_rdm(t, eeg_data, pseudo_order, data_split='train', distance_type='eu
             if distance_type == 'euclidean':
                 eeg_cond_1 = np.mean(eeg_cond_1,0)
                 eeg_cond_2 = np.mean(eeg_cond_2,0)
-                distance = np.linalg.norm(eeg_cond_1-eeg_cond_2).astype('float32')
+                # distance = np.linalg.norm(eeg_cond_1-eeg_cond_2).astype('float32')
+                distance = np.dot((eeg_cond_1 - eeg_cond_2), np.transpose(eeg_cond_1 - eeg_cond_2)).astype('float32')[0][0] 
 
                 rdm_array[v1, v2] = distance
                 rdm_array[v2, v1] = distance
@@ -128,7 +136,14 @@ def compute_rdm(t, eeg_data, pseudo_order, data_split='train', distance_type='eu
                 rdm_array[v2, v1] = score
 
             combination = combination + 1
+    
+    toc = time.time()
+    print(f'rdm for t={t} done ')
+    print('timepoint done in {:.4f} seconds'.format(toc-tic))
 
-    return rdm_array
+    return (rdm_array, t)
+
+
+
 
 

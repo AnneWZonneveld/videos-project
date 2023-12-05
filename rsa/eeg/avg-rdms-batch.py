@@ -6,15 +6,17 @@ import glob
 import numpy as np
 import pickle
 
-# distance_types = ['euclidean', 'euclidean-cv', 'classification', 'dv-classification']
-distance_types = ['euclidean', 'euclidean-cv']
+distance_types = ['classification', 'dv-classification']
 n_subs = 3
 
 for sub in range(n_subs):
 
     sub_format = format(sub + 1, '02')
+    
 
     for distance_type in distance_types:
+
+        print(f'sub {sub_format} {distance_type}')
 
         file_dir =  f'/scratch/azonneveld/rsa/eeg/rdms/sub-{sub_format}/{distance_type}/' 
         files = []
