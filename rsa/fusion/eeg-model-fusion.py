@@ -16,24 +16,27 @@ from scipy.stats import pearsonr
 from statsmodels.stats.multitest import multipletests
 from tqdm import tqdm
 from scipy.stats import pearsonr, spearmanr
-from vp_utils import corr_nullDist
+from functools import partial
+import multiprocessing as mp
+from vp_utils import *
 
 n_subs = 3
 data_split = 'train'
 distance_type = 'euclidean-cv'
 feature = 'objects' 
 alpha = 0.05
+n_cpus = 2
 
 res_folder = '/scratch/azonneveld/rsa/fusion/plots/'
 
-# Load in model rdms
+########################### Loading in data #####################################
+
 print('Loading model rdms')
 model_file = '/scratch/azonneveld/rsa/model/rdms/t2/rdm_t2_freq.pkl' #change this to permuted freq matrix
 with open(model_file, 'rb') as f: 
     model_rdms = pickle.load(f)
 model_rdms = model_rdms[data_split]
 
-# Load in EEG rdms for all participants
 print('Loading neural rdms')
 rdms_array = np.zeros((n_subs, 1000, 1000, 185))
 for i in range(n_subs):
@@ -46,52 +49,85 @@ for i in range(n_subs):
     
     rdms_array[i, :, :, :] = eeg_rdms['rdms_array']
 
+############################# Analysis ###########################################
+
 # Average RDMs over participants
 GA_rdms = np.mean(rdms_array, axis=0)
 # times = range(GA_rdms.shape[2])
-times = 50 #test
-
+times = range(3) #test
 
 # Calculate correlation
 print('Calculating rdm correlation')
 feature_rdm = model_rdms[feature]
+
+partial_calc_rsquared = partial(calc_rsquared,
+                                GA_rdms = GA_rdms,
+                                feature_rdm = feature_rdm,
+                                feature=feature,
+                                n_cpus=n_cpus,
+                                its=10)
+
+
+pool = mp.Pool(n_cpus)
+results = pool.map(partial_calc_rsquared, times)
+pool.close()
+print('Done calculating correlations')
+
 rdm_cors = []
 rdm_cor_ps = []
+for i in len(results):
+    rdm_cors.append(results[i][0])
+    rdm_cor_ps.append(results[i][1])
 
-for t in tqdm(range(times)): #could do multiprocessing here?
 
-    # Calc correlation
-    neural_rdm = GA_rdms[:, :, t]
-    rdm_cor = spearmanr(squareform(neural_rdm, checks=False), squareform(feature_rdm, checks=False))[0] 
-    rdm_cors.append(rdm_cor)
+# Bootstrap confidence interval
+print('Bootstrapping CI')
+partial_cor_variability = partial(cor_variability,
+                                GA_rdms = GA_rdms,
+                                feature_rdm = feature_rdm,
+                                its=10)
 
-    # Calc significance
-    rdm_p = corr_nullDist(rdm_cor, neural_rdm, feature_rdm, its=10) # testing purpose
-    rdm_cor_ps.append(rdm_p)
+pool = mp.Pool(n_cpus)
+results = pool.map(partial_cor_variability, times)
+pool.close()
+print('Done bootstrapping CI')
 
-stats_df = pd.DataFrame()
-stats_df['cors'] = rdm_cors
-stats_df['ps'] = np.array(rdm_cor_ps) < alpha
-stats_df['times'] = eeg_rdms['times']
+lower_CI = []
+upper_CI = []
+for i in len(results):
+    lower_CI.append(results[i][0])
+    upper_CI.append(results[i][1])
 
 
 # Plot 
+print('Creating plots')
+stats_df = pd.DataFrame()
+stats_df['cors'] = rdm_cors
+stats_df['ps'] = np.array(rdm_cor_ps) < alpha
+stats_df['lower_CI'] = lower_CI
+stats_df['upper_CI'] = upper_CI
+# stats_df['times'] = eeg_rdms['times']
+stats_df['times'] = times
+
 max_cor = np.max(stats_df['cors'])
 y_limit = 1.5 * max_cor
-formated_ps = [y_limit for i in stats_df['ps'] if i == True else np.nan]
+format_ps = [y_limit if i == True else np.nan for i in stats_df['ps']]
+stats_df['format_ps'] = format_ps
 
 fig, ax = plt.subplots()
-sns.lineplot(data=stats_df, x='times', y='cors', label=feature)
-plt.plot(times, formated_ps, 'ro')
+ax.plot(stats_df['times'], stats_df['cors'], label='feature', color='b')
+ax.fill_between(stats_df['times'], stats_df['lower_CI'], stats_df['upper_CI'], color='b', alpha=.1)
+ax.plot(stats_df['times'], stats_df['format_ps'], 'ro', color='b')
 ax.set_title('EEG-model correlation')
 ax.set_xlabel('Time (s)')
 ax.set_ylabel('Spearman cor')
+ax.legend()
+fig.tight_layout()
 
 img_path = res_folder + f'var_explained_test.png'
 plt.savefig(img_path)
 plt.clf()
 
-# Bootstrap confidence interval
 
 # Asses in comparison to noise ceiling
     # Calc noise ceiling
