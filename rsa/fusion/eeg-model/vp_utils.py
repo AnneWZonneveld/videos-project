@@ -120,20 +120,25 @@ def calc_rsquared_rw(t, data_shape, design_matrix, shm, its=10):
     model = LinearRegression().fit(design_matrix, sq_eeg_rdm)
     coefs = model.coef_
 
-    rw_rdms = 0
-    for i in range(design_matrix.shape[1]-1):
-        sq_rdm = design_matrix[:, i]
-        rw_rdm = coefs[i] * sq_rdm
-        rw_rdms = rw_rdms + rw_rdm
-    rw_rdms = rw_rdms + coefs[-1]
+    # rw_rdms = 0
+    # for i in range(design_matrix.shape[1]-1):
+    #     sq_rdm = design_matrix[:, i]
+    #     rw_rdm = coefs[i] * sq_rdm
+    #     rw_rdms = rw_rdms + rw_rdm
+    # rw_rdms = rw_rdms + coefs[-1]
 
-    # Calculating cor & p
-    rdm_cor = spearmanr(sq_eeg_rdm, rw_rdms)[0] 
-    rdm_cor_p = corr_nullDist(rdm_cor, eeg_rdm, rw_rdms, its=its) # rw_rdms has to be transformed back in the original shape rdm? or function has to be altered
+    # # Calculating cor & p
+    # rdm_cor = spearmanr(sq_eeg_rdm, rw_rdms)[0] 
+    # rdm_cor_p = corr_nullDist(rdm_cor, eeg_rdm, squareform(rw_rdms), its=its) 
 
-    toc = time.time()
+    # toc = time.time()
 
-    print(f'iteration {t} in {toc-tic}')
+    # print(f'iteration {t} in {toc-tic}')
 
-    return (rdm_cor, rdm_cor_p)
+    # return (rdm_cor, rdm_cor_p)
+
+    # Predict 
+    r2_score = model.score(design_matrix, sq_eeg_rdm)
+    rdm_cor_p = np.nan
+    return (r2_score, rdm_cor_p)
     
