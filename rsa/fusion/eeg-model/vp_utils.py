@@ -44,7 +44,7 @@ def corr_nullDist(rdm_cor, rdm_1, rdm_2, its=100):
     return p_val
 
 
-def calc_rsquared(t, data_shape, feature_rdm, shm, its=10):
+def calc_rsquared(t, data_shape, feature_rdm, shm, its=10, slide=0):
 
     print(f'Calculating r^2 t= {t}')
 
@@ -58,7 +58,10 @@ def calc_rsquared(t, data_shape, feature_rdm, shm, its=10):
     rdm_cor = spearmanr(squareform(eeg_rdm, checks=False), squareform(feature_rdm, checks=False))[0] 
 
     # Calc significance
-    rdm_cor_p = corr_nullDist(rdm_cor, eeg_rdm, feature_rdm, its=its) # testing purpose
+    if slide == 0:
+        rdm_cor_p = corr_nullDist(rdm_cor, eeg_rdm, feature_rdm, its=its) 
+    else:
+        rdm_cor_p = np.nan
 
     toc = time.time()
 
@@ -104,7 +107,7 @@ def cor_variability(t, data_shape, feature_rdm, shm, its=100):
     return (lower_p, upper_p)
 
 
-def calc_rsquared_rw(t, data_shape, design_matrix, shm, its=10):
+def calc_rsquared_rw(t, data_shape, design_matrix, shm):
 
     print(f'Calculating r^2 t= {t}')
 
@@ -118,27 +121,37 @@ def calc_rsquared_rw(t, data_shape, design_matrix, shm, its=10):
 
     # Reweighting of model rdms using multiple linear regression
     model = LinearRegression().fit(design_matrix, sq_eeg_rdm)
-    coefs = model.coef_
-
-    # rw_rdms = 0
-    # for i in range(design_matrix.shape[1]-1):
-    #     sq_rdm = design_matrix[:, i]
-    #     rw_rdm = coefs[i] * sq_rdm
-    #     rw_rdms = rw_rdms + rw_rdm
-    # rw_rdms = rw_rdms + coefs[-1]
-
-    # # Calculating cor & p
-    # rdm_cor = spearmanr(sq_eeg_rdm, rw_rdms)[0] 
-    # rdm_cor_p = corr_nullDist(rdm_cor, eeg_rdm, squareform(rw_rdms), its=its) 
-
-    # toc = time.time()
-
-    # print(f'iteration {t} in {toc-tic}')
-
-    # return (rdm_cor, rdm_cor_p)
 
     # Predict 
     r2_score = model.score(design_matrix, sq_eeg_rdm)
     rdm_cor_p = np.nan
+
     return (r2_score, rdm_cor_p)
+
+
+def shared_var_plot(shared_cor_dict, times, sub, res_folder, method):
+    combs = ['o-s', 'o-a', 's-a','o-s-a']
+
+    colours = ['b', 'r', 'g', 'orange']
+    fig, ax = plt.subplots(dpi=300)
+    for i in range(len(combs)):
+        comb = combs [i]
+        colour = colours[i]
+
+        stats_df = pd.DataFrame()
+        stats_df['cors'] = shared_cor_dict[comb]
+        stats_df['times'] = times
+        ax.plot(stats_df['times'], stats_df['cors'], label=comb, color=colour)
+
+    ax.axvline(x=0, color='gray', alpha=0.5, linestyle='--')
+    ax.axvline(x=3, color='gray', alpha=0.5, linestyle='--')
+    ax.set_title(f'EEG-model relation sub {sub}')
+    ax.set_xlabel('Time (s)')
+    ax.set_ylabel('Shared variance explained (%)')
+    ax.legend()
+    fig.tight_layout()
+
+    img_path = res_folder + f'{sub}_{method}_shared_r2.png'
+    plt.savefig(img_path)
+    plt.clf()
     
