@@ -48,12 +48,12 @@ parser.add_argument('--zscore', default=1, type=int)
 parser.add_argument('--data_split', default='train', type=str) 
 parser.add_argument('--distance_type', default='euclidean', type=str) 
 parser.add_argument('--batch', default=0, type=int) 
+parser.add_argument('--slide', default=0, type=int) 
 args = parser.parse_args()
 
 print('\nInput arguments:')
 for key, val in vars(args).items():
 	print('{:16} {}'.format(key, val))
-
 
 # Set random seed for reproducible results based on batch (a.k.a. permutation)
 seed = args.batch
@@ -62,7 +62,12 @@ np.random.seed(seed)
 
 ################################### Load EEG data ######################################
 sub_format = format(args.sub, '02') 
-data_dir = f'/scratch/giffordale95/projects/eeg_videos/dataset/preprocessed_data/dataset_02/eeg/sub-{sub_format}/mvnn-time/baseline_correction-01/highpass-0.01_lowpass-100/sfreq-0050/preprocessed_data.npy'
+
+if args.slide == 0:
+    data_dir = f'/scratch/giffordale95/projects/eeg_videos/dataset/preprocessed_data/dataset_02/eeg/sub-{sub_format}/mvnn-time/baseline_correction-01/highpass-0.01_lowpass-100/sfreq-0050/preprocessed_data.npy'
+else:
+    data_dir = f'/scratch/azonneveld/preprocessing/sub-{sub_format}/mvnn-time/baseline_correction-01/highpass-0.01_lowpass-100/sfreq-0250/preprocessed_data.npy'
+
 data_dict = np.load(data_dir, allow_pickle=True).item()
 times = data_dict['times']
 ch_names = data_dict['ch_names']
@@ -97,6 +102,20 @@ elif args.data_split == 'test':
 eeg_data = eeg_data[idx]
 stimuli_presentation_order = stimuli_presentation_order[idx]
 
+if args.slide == 1:
+
+    # Sliding window calculation
+    slide_size = 5
+    eeg_data_rs = eeg_data.reshape((eeg_data.shape[0], eeg_data.shape[1], int(eeg_data.shape[2]/slide_size), slide_size))
+    av_eeg_data = np.mean(eeg_data_rs, axis=3)
+    eeg_data = av_eeg_data
+
+    new_times = []
+    for i in range(len(times)):
+        if i % slide_size == 0:
+            new_times.append(times[i])  
+    times = np.array(new_times)
+
 print('Loading EEG data done')
 
 ################################### Constructing RDMs #############################################
@@ -125,29 +144,10 @@ for v1 in range(n_conditions):
 
 # Parallel processing computing rdms
 print('Starting multiprocessing')
-results = compute_rdms_multi(eeg_data=eeg_data, pseudo_order=pseudo_order, ts=times, batch = args.batch, data_split=args.data_split, distance_type=args.distance_type)
-# print(f'results : {results}')
+results = compute_rdms_multi(eeg_data=eeg_data, pseudo_order=pseudo_order, ts=times, batch = args.batch, data_split=args.data_split, distance_type=args.distance_type, shm_name=f'{args.sub}_')
 print('Done multiprocessing')
 
-# # Format data into array
-# for t in range(eeg_data.shape[2]):
-#     rdm = results[t]
-#     rdms_array[:, :, t] = rdm
-
-
-# Save results
-# results_dict = {
-#     'data_split': args.data_split, 
-#     'sub': args.sub, 
-#     'zscore': args.zscore,
-#     'distance_type': args.distance_type,
-#     'batch': args.batch,
-# 	'rdms_array': rdms_array,
-# 	'times': times,
-# 	'ch_names': ch_names,
-# 	'info': info
-# }
-
+# Save 
 results_dict = {
     'data_split': args.data_split, 
     'sub': args.sub, 
@@ -157,12 +157,13 @@ results_dict = {
 	'rdms_array': results,
 	'times': times,
 	'ch_names': ch_names,
+    'slide': args.slide,
 	'info': info
 }
 
-res_folder = f'/scratch/azonneveld/rsa/eeg/rdms/sub-{sub_format}/{args.distance_type}' 
-if not os.path.exists(res_folder) == True:
-    os.mkdir(res_folder)
+res_folder = f'/scratch/azonneveld/rsa/eeg/rdms/z_{args.zscore}/sub-{sub_format}/{args.distance_type}/slide_{args.slide}/' 
+if os.path.isdir(res_folder) == False:
+	os.makedirs(res_folder)
 
 file_path = res_folder + f'/{args.data_split}_{args.batch}_mp.pkl'
 
