@@ -9,20 +9,26 @@ from sklearn.metrics import pairwise_distances
 from scipy.spatial.distance import squareform
 from tqdm import tqdm
 from scipy.stats import pearsonr, spearmanr
+from statsmodels.stats.multitest import fdrcorrection
 import argparse
 
 # Take arguments
 parser = argparse.ArgumentParser()
 parser.add_argument('--sub', default=1, type=int)
 parser.add_argument('--alpha', default=0.05, type=float)
+parser.add_argument('--disance_type', default='euclidean-cv', type=str)
+parser.add_argument('--bin_width', default=0, type=float)
 
 args = parser.parse_args()
 
 
 ####################### Load data #######################################
 sub_format = format(args.sub, '02')
-sub_folder = f'/scratch/azonneveld/rsa/fusion/eeg-model/sub-{sub_format}/' 
-res_folder = f'/scratch/azonneveld/rsa/fusion/eeg-model/plots/'
+sub_folder = f'/scratch/azonneveld/rsa/fusion/eeg-model/standard/sub-{sub_format}/{args.distance_type}/bin_{args.bin_width}/' 
+res_folder = f'/scratch/azonneveld/rsa/fusion/eeg-model/standard/plots/sub-{sub_format}/'
+
+if not os.path.exists(res_folder) == True:
+    os.mkdir(res_folder)
 
 ob_types = ['avg', 'freq']
 format_ob_types= ['', '_freq']
@@ -58,13 +64,16 @@ for i in range(len(ob_types)):
         ps[ob_type].append(cor_values[i][1])
         cis_low[ob_type].append(cis_values[i][0])
         cis_up[ob_type].append(cis_values[i][1])
+    
+    # ps[ob_type] = fdrcorrection(ps[ob_type], alpha=args.alpha)[1]
+    ps[ob_type] = fdrcorrection(ps[ob_type], alpha=alpha)[1]
 
 
 ######################### Plot ####################################
 colours = ['b', 'r']
 fig, ax = plt.subplots(dpi=300)
 for i in range(len(ob_types)):
-    ob_types = ob_types[i]
+    ob_type = ob_types[i]
     colour = colours[i]
 
     stats_df = pd.DataFrame()

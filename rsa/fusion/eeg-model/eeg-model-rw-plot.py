@@ -15,16 +15,28 @@ import argparse
 parser = argparse.ArgumentParser()
 parser.add_argument('--sub', default=1, type=int)
 parser.add_argument('--alpha', default=0.05, type=float)
-parser.add_argument('--distance_type', default=0.05, type=float)
-parser.add_argument('--bin_width', default=0.05, type=float)
+parser.add_argument('--distance_type', default='euclidean-cv', type=str)
+parser.add_argument('--bin_width', default=0, type=float)
 parser.add_argument('--zscore', default=0, type=int)
+parser.add_argument('--slide', default=0, type=int)
+parser.add_argument('--cv_r2', default=0, type=int)
+parser.add_argument('--ridge', default=0, type=int)
 args = parser.parse_args()
 
 
 ####################### Load data #######################################
 sub_format = format(args.sub, '02')
-sub_folder = f'/scratch/azonneveld/rsa/fusion/eeg-model/reweighted/z_{args.zcore}/bin_{args.bin_width}/sub-{sub_format}/' 
-res_folder = f'/scratch/azonneveld/rsa/fusion/eeg-model/reweighted/z_{args.zcore}/bin_{args.bin_width}/plots/'
+if args.bin_width == 0:
+    bin_format = 0.0
+else:
+    bin_format = args.bin_width
+
+# sub_folder = f'/scratch/azonneveld/rsa/fusion/eeg-model/reweighted/z_{args.zscore}/bin_{args.bin_width}/slide_{args.slide}/sub-{sub_format}/' 
+# res_folder = f'/scratch/azonneveld/rsa/fusion/eeg-model/reweighted/z_{args.zscore}/bin_{args.bin_width}/slide_{args.slide}/plots/'
+sub_folder = f'/scratch/azonneveld/rsa/fusion/eeg-model/reweighted/z_{args.zscore}/bin_{bin_format}/slide_{args.slide}/sub-{sub_format}/ridge_{args.ridge}/cv_{args.cv_r2}/' 
+res_folder = f'/scratch/azonneveld/rsa/fusion/eeg-model/reweighted/plots/z_{args.zscore}/bin_{bin_format}/slide_{args.slide}/sub-{sub_format}/ridge_{args.ridge}/cv_{args.cv_r2}/'
+if not os.path.exists(res_folder) == True:
+    os.makedirs(res_folder)
 
 feature_combs = ['o-s-a', 'o-s', 'o-a', 's-a', 'o', 's', 'a']
 
@@ -54,22 +66,6 @@ features_cor_dict = {
     'actions': u_a_cors
 }
 
-################## Shared variance (based on Bankson et al., 2018) #######################################
-os_shared = np.array(cors['s-a'])*100 - np.array(cors['a'])*100 - u_s_cors
-sa_shared = np.array(cors['o-s'])*100 - np.array(cors['o'])*100 - u_s_cors
-oa_shared = np.array(cors['o-s'])*100 - np.array(cors['s'])*100 - u_o_cors
-
-osa_shared = osa_cors - u_o_cors - u_s_cors - u_a_cors - os_shared - sa_shared - oa_shared
-
-shared_cor_dict = {
-    'o-s': os_shared,
-    's-a': sa_shared,
-    'o-a' : oa_shared,
-    'o-s-a': osa_shared
-}
-
-shared_var_plot(shared_cor_dict=shared_cor_dict, times=cor_res['times'], sub=sub_format, res_folder=res_folder, method='bankson')
-
 
 ################## Shared variance (Pablo suggestion) #######################################
 os_shared = osa_cors - np.array(cors['a'])*100 - u_o_cors - u_s_cors
@@ -85,25 +81,10 @@ shared_cor_dict = {
     'o-s-a': osa_shared
 }
 
-shared_var_plot(shared_cor_dict=shared_cor_dict, times=cor_res['times'], sub=sub_format, res_folder=res_folder, method='pablo')
-
-################## Shared variance ( Tarhan method) #######################################
-osa_shared = (np.array(cors['o'])*100) + (np.array(cors['a'])*100) + (np.array(cors['s'])*100) - 2 * (np.array(cors['o-s-a'])*100) + u_a_cors + u_o_cors + u_s_cors
-
-os_shared = np.array(cors['o'])*100 + np.array(cors['s'])*100 - np.array(cors['o-s'])*100 - osa_shared
-sa_shared = np.array(cors['s'])*100 + np.array(cors['a'])*100 - np.array(cors['s-a'])*100 - osa_shared
-oa_shared = np.array(cors['o'])*100 + np.array(cors['a'])*100 - np.array(cors['o-a'])*100 - osa_shared
-
-shared_cor_dict = {
-    'o-s': os_shared,
-    's-a': sa_shared,
-    'o-a' : oa_shared,
-    'o-s-a': osa_shared
-}
-
-shared_var_plot(shared_cor_dict=shared_cor_dict, times=cor_res['times'], sub=sub_format, res_folder=res_folder, method='tarhan')
 
 ##################### Plot: Standard variance explained #############################
+print('Plotting standard variance explained')
+
 features = ['o', 's', 'a']
 colours = ['b', 'r', 'g']
 
@@ -127,7 +108,7 @@ for i in range(len(features)):
 ax.plot(stats_df['times'], osa_cors, label='full model', color='gray', alpha=0.8)
 ax.axvline(x=0, color='gray', alpha=0.5, linestyle='--')
 ax.axvline(x=3, color='gray', alpha=0.5, linestyle='--')
-ax.set_title(f'EEG-model relation sub {sub_format}')
+ax.set_title(f'EEG-model {sub_format}, ridge={args.ridge}, cv={args.cv_r2}')
 ax.set_xlabel('Time (s)')
 ax.set_ylabel('Variance exlained (%)')
 ax.legend()
@@ -139,6 +120,8 @@ plt.clf()
 
 
 ######################### Plot: unique variance ####################################
+print('Plotting unique variance explained')
+
 features = ['objects', 'scenes', 'actions']
 
 colours = ['b', 'r', 'g']
@@ -155,7 +138,7 @@ for i in range(len(features)):
 ax.plot(stats_df['times'], osa_cors, label='full model', color='gray', alpha=0.8)
 ax.axvline(x=0, color='gray', alpha=0.5, linestyle='--')
 ax.axvline(x=3, color='gray', alpha=0.5, linestyle='--')
-ax.set_title(f'EEG-model relation sub {sub_format}')
+ax.set_title(f'EEG-model {sub_format}, ridge={args.ridge}, cv={args.cv_r2}')
 ax.set_xlabel('Time (s)')
 ax.set_ylabel('Unique variance exlained (%)')
 ax.legend()
@@ -166,6 +149,8 @@ plt.savefig(img_path)
 plt.clf()
 
 ######################### Plot: shared variance variance ####################################
+print('Plotting shared variance')
+
 combs = ['o-s', 'o-a', 's-a','o-s-a']
 
 colours = ['b', 'r', 'g', 'orange']
@@ -182,7 +167,7 @@ for i in range(len(combs)):
 # ax.plot(stats_df['times'], osa_cors, label='full model', color='gray', alpha=0.8)
 ax.axvline(x=0, color='gray', alpha=0.5, linestyle='--')
 ax.axvline(x=3, color='gray', alpha=0.5, linestyle='--')
-ax.set_title(f'EEG-model relation sub {sub_format}')
+ax.set_title(f'EEG-model sub {sub_format}, ridge={args.ridge}, cv={args.cv_r2}')
 ax.set_xlabel('Time (s)')
 ax.set_ylabel('Shared variance explained (%)')
 ax.legend()

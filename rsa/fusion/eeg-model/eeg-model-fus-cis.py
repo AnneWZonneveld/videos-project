@@ -25,6 +25,7 @@ parser.add_argument('--sub', default=1, type=int)
 parser.add_argument('--feature', default='objects', type=str)
 parser.add_argument('--distance_type', default='euclidean-cv', type=str) 
 parser.add_argument('--jobarr_id', default=1, type=int) 
+parser.add_argument('--bin_width', default=0, type=float)
 args = parser.parse_args()
 
 print('\nInput arguments:')
@@ -51,14 +52,33 @@ with open(eeg_file, 'rb') as f:
     eeg_data = pickle.load(f)
 eeg_rdms = eeg_data['rdms_array']
 
+######################### Temporal smoothening ####################################
+
+if not args.bin_width == 0:
+    og_bin_width = abs(eeg_data['times'][0] - eeg_data['times'][1])
+    smooth_factor = int(round((args.bin_width / og_bin_width), 1))
+    # smooth_factor = round((bin_width / og_bin_width), 1)
+
+    n_samples = int(eeg_rdms.shape[2]/smooth_factor)
+    smooth_eeg_rdms = np.zeros((eeg_rdms.shape[0], eeg_rdms.shape[1], n_samples))
+    t_samples = []
+    for i in range(n_samples):
+        id_1 = int(i * smooth_factor)
+        id_2 = int(id_1 + smooth_factor)
+        smooth_eeg_rdms[:, :, i] = np.mean(eeg_rdms[:,:,id_1:id_2], axis=2)
+        t_samples.append(eeg_data['times'][id_1])
+
+    eeg_data['times'] = t_samples
+    eeg_rdms = smooth_eeg_rdms
+
 ############################# Analysis ###########################################
 
 # Calculate CI
 print('Starting multiprocessing CI')
-results = calc_cis_mp(eeg_rdms=eeg_rdms, feature_rdm=feature_rdm, jobarr_id=args.jobarr_id, its=1000, n_cpus=n_cpus)
+shm_name = f'b{args.bin_width}_{args.distance_type}'
+results = calc_cis_mp(eeg_rdms=eeg_rdms, feature_rdm=feature_rdm, jobarr_id=args.jobarr_id, its=1000, n_cpus=n_cpus, shm_name=shm_name)
 print('Done multiprocessing')
-print(results)
-print(len(results))
+
 
 ############################ Save data #############################################
 
@@ -68,10 +88,11 @@ results_dict = {
     'feature': args.feature,
     'distance_type': args.distance_type,
 	'cis_values': results,
-	'times': eeg_data['times']
+	'times': eeg_data['times'],
+    'bin_width': args.bin_width
 }
 
-res_folder = f'/scratch/azonneveld/rsa/fusion/eeg-model/sub-{sub_format}/' 
+res_folder = f'/scratch/azonneveld/rsa/fusion/eeg-model/standard/sub-{sub_format}/{args.distance_type}/bin_{args.bin_width}/' 
 if not os.path.exists(res_folder) == True:
     os.mkdir(res_folder)
 
