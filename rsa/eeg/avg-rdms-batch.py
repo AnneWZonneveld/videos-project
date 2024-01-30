@@ -5,51 +5,77 @@ Averages RDMs per participant per distance type over permutations.
 import glob
 import numpy as np
 import pickle
+import sys
+import shutil
+import argparse
 
-distance_types = ['classification', 'dv-classification']
-n_subs = 3
+times = 185
+n_conditions = 1000
 
-for sub in range(n_subs):
+parser = argparse.ArgumentParser()
+parser.add_argument('--sub', default=1, type=int)
+parser.add_argument('--zscore', default=0, type=int)
+parser.add_argument('--distance_type', default='euclidean-cv', type=str) 
+parser.add_argument('--sfreq', default=500, type=int)
+args = parser.parse_args()
 
-    sub_format = format(sub + 1, '02')
+sub_format = format(args.sub, '02')
+sfreq_format = format(args.sfreq, '04')
+
+print('\nInput arguments:')
+for key, val in vars(args).items():
+	print('{:16} {}'.format(key, val))
+
+file_dir =  f'/scratch/azonneveld/rsa/eeg/rdms/z_{args.zscore}/sub-{sub_format}/{args.distance_type}/sfreq-{sfreq_format}/'
+files = []
+
+for file in glob.glob(file_dir + '*'): 
+    files.append(file)
+
+if len(files) != 100:
+    print('Found less than 100 files; stop calculation')
+    sys.exit()
+
+# Process in batches
+perm_array = np.zeros((10, n_conditions, n_conditions, times))
+
+for b in range(10):
     
+    b_array = np.zeros((10, n_conditions, n_conditions, times))
 
-    for distance_type in distance_types:
+    for i in range(10):
 
-        print(f'sub {sub_format} {distance_type}')
+        index = (b * 10) + i
 
-        file_dir =  f'/scratch/azonneveld/rsa/eeg/rdms/sub-{sub_format}/{distance_type}/' 
-        files = []
-
-        for file in glob.glob(file_dir + '*'): 
-            files.append(file)
+        file = files[index]
+        with open(file, 'rb') as f: 
+            data = pickle.load(f)
         
-        perm_array = np.zeros((len(files), 1000, 1000, 185))
+        for t in range(times):
+            b_array[i, :, :, t] = data['rdms_array'][t]
+    
+    b_avg_array = np.mean(b_array, axis=0)
+    perm_array[b, :, :] = b_avg_array
 
-        for i in range(len(files)):
+avg_array = np.mean(perm_array, axis=0)
 
-            file = files[i]
-            with open(file, 'rb') as f: 
-                data = pickle.load(f)
-            
-            perm_array[i, :, :, :] = data['rdms_array']
+# Save results
+results_dict = {
+    'data_split': data['data_split'], 
+    'sub': data['sub'], 
+    'zscore': data['zscore'],
+    'distance_type': data['distance_type'],
+    'rdms_array': avg_array,
+    'times': data['times'],
+    'ch_names': data['ch_names'],
+    'info': data['info'],
+}
+
+with open(f'/scratch/azonneveld/rsa/eeg/rdms/z_{zscore}/sub-{sub_format}/avg_{distance_type}_{sfreq_format}.pkl', 'wb') as f:
+    pickle.dump(results_dict, f)
         
-        avg_array = np.mean(perm_array, axis=0)
-
-        # Save results
-        results_dict = {
-            'data_split': data['data_split'], 
-            'sub': data['sub'], 
-            'zscore': data['zscore'],
-            'distance_type': data['distance_type'],
-            'rdms_array': avg_array,
-            'times': data['times'],
-            'ch_names': data['ch_names'],
-            'info': data['info']
-        }
-
-        with open(f'/scratch/azonneveld/rsa/eeg/rdms/sub-{sub_format}/avg_{distance_type}.pkl', 'wb') as f:
-            pickle.dump(results_dict, f)
+        # # Delete individual pseudotrial batches
+        # shutil.rmtree(file_dir)
 
 
 
