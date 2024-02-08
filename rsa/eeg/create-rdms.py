@@ -48,7 +48,7 @@ parser.add_argument('--zscore', default=1, type=int)
 parser.add_argument('--data_split', default='train', type=str) 
 parser.add_argument('--distance_type', default='euclidean', type=str) 
 parser.add_argument('--batch', default=0, type=int) 
-parser.add_argument('--slide', default=0, type=int) 
+parser.add_argument('--sfreq', default=500, type=int)
 args = parser.parse_args()
 
 print('\nInput arguments:')
@@ -62,11 +62,13 @@ np.random.seed(seed)
 
 ################################### Load EEG data ######################################
 sub_format = format(args.sub, '02') 
+sfreq_format = format(args.sfreq, '04') 
 
-if args.slide == 0:
-    data_dir = f'/scratch/giffordale95/projects/eeg_videos/dataset/preprocessed_data/dataset_02/eeg/sub-{sub_format}/mvnn-time/baseline_correction-01/highpass-0.01_lowpass-100/sfreq-0050/preprocessed_data.npy'
+if args.sfreq == 50:
+    data_dir = f'/scratch/giffordale95/projects/eeg_videos/dataset/preprocessed_data/dataset_02/eeg/sub-{sub_format}/mvnn-time/baseline_correction-01/highpass-0.01_lowpass-100/sfreq-{sfreq_format}/preprocessed_data.npy'
 else:
-    data_dir = f'/scratch/azonneveld/preprocessing/sub-{sub_format}/mvnn-time/baseline_correction-01/highpass-0.01_lowpass-100/sfreq-0250/preprocessed_data.npy'
+    data_dir = f'/scratch/azonneveld/preprocessing/data/sub-{sub_format}/mvnn-time/baseline_correction-01/highpass-0.01_lowpass-100/sfreq-{sfreq_format}/preprocessed_data.npy'
+    # data_dir = f'/scratch/azonneveld/preprocessing/sub-{sub_format}/mvnn-time/baseline_correction-01/highpass-0.01_lowpass-100/sfreq-0250/preprocessed_data.npy'
 
 data_dict = np.load(data_dir, allow_pickle=True).item()
 times = data_dict['times']
@@ -74,13 +76,14 @@ ch_names = data_dict['ch_names']
 info = data_dict['info']
 eeg_data_list = data_dict['eeg_data']
 stimuli_presentation_order_list = data_dict['stimuli_presentation_order']
+del data_dict
 
 # Z score data per session
 for session in range(len(eeg_data_list)):
     data_shape = eeg_data_list[session].shape
     data_provv = np.reshape(eeg_data_list[session], (len(eeg_data_list[session]), -1))
-    if args.zscore == 1:
-    # if zscore == 1:
+    # if args.zscore == 1:
+    if zscore == 1:
         scaler = StandardScaler()
         data_provv = scaler.fit_transform(data_provv)
     data_provv = np.reshape(data_provv, data_shape)
@@ -94,27 +97,43 @@ for session in range(len(eeg_data_list)):
 del eeg_data_list, stimuli_presentation_order_list
 
 # Select the data split
-if args.data_split == 'train':
-# if data_split == 'train':
+# if args.data_split == 'train':
+if data_split == 'train':
     idx = np.where(stimuli_presentation_order <= 1000)[0]
-elif args.data_split == 'test':
+# elif args.data_split == 'test':
+elif data_split == 'test':
     idx = np.where(stimuli_presentation_order > 1000)[0]
 eeg_data = eeg_data[idx]
 stimuli_presentation_order = stimuli_presentation_order[idx]
 
-if args.slide == 1:
+if args.sfreq != 50:
 
     # Sliding window calculation
-    slide_size = 5
-    eeg_data_rs = eeg_data.reshape((eeg_data.shape[0], eeg_data.shape[1], int(eeg_data.shape[2]/slide_size), slide_size))
-    av_eeg_data = np.mean(eeg_data_rs, axis=3)
-    eeg_data = av_eeg_data
+    if args.sfreq == 250:
+        slide_size = 5
+    elif args.sfreq == 500:
+        slide_size = 10
+
+    # Central aligned bins 
+    new_n_times = int(len(times)/slide_size)
+    binned_eeg = np.zeros((eeg_data.shape[0], eeg_data.shape[1], new_n_times))
+    for i in range(new_n_times):
+        if i == 0:
+            binned_eeg[:, :, i] = np.mean(eeg_data[:, :, 0:int(slide_size/2)], axis=2)
+        elif i == (len(times)-1):
+            binned_eeg[:, :, i] = np.mean(eeg_data[:, :, (i-1)*slide_size:], axis=2)
+        else:
+            binned_eeg[:, :, i] = np.mean(eeg_data[:, :, (i-1)*slide_size : i*slide_size], axis=2)
+    
+    eeg_data = binned_eeg
 
     new_times = []
     for i in range(len(times)):
         if i % slide_size == 0:
             new_times.append(times[i])  
     times = np.array(new_times)
+
+    del binned_eeg
 
 print('Loading EEG data done')
 
@@ -127,10 +146,10 @@ n_channels = len(ch_names)
 n_time = times.shape[0]
 rdms_array = np.zeros((n_conditions, n_conditions, eeg_data.shape[2]), dtype='float32')
 
-
 # Predetermine pseudotrials 
 n_combinations = squareform(rdms_array[:, :, 0]).shape[0]
 pseudo_order = np.zeros((n_combinations), dtype=object)
+del rdms_array
 
 combination = 0
 for v1 in range(n_conditions):
@@ -157,11 +176,11 @@ results_dict = {
 	'rdms_array': results,
 	'times': times,
 	'ch_names': ch_names,
-    'slide': args.slide,
+    'sfreq': args.sfreq,
 	'info': info
 }
 
-res_folder = f'/scratch/azonneveld/rsa/eeg/rdms/z_{args.zscore}/sub-{sub_format}/{args.distance_type}/slide_{args.slide}/' 
+res_folder = f'/scratch/azonneveld/rsa/eeg/rdms/{args.data_split}/z_{args.zscore}/sub-{sub_format}/{args.distance_type}/sfreq-{sfreq_format}/' 
 if os.path.isdir(res_folder) == False:
 	os.makedirs(res_folder)
 
