@@ -19,7 +19,7 @@ from multiprocessing import current_process, cpu_count
 import time
 
 
-def compute_rdm(t, data_shape, pseudo_order, shm, data_split='train', distance_type='euclidean'):
+def compute_rdm(t, data_shape, pseudo_order, shm, dtype, data_split='train', distance_type='euclidean'):
 
     print(f'compute rdm for t={t}')
     tic = time.time()
@@ -27,10 +27,10 @@ def compute_rdm(t, data_shape, pseudo_order, shm, data_split='train', distance_t
     if data_split=='train':
         n_conditions = 1000
     elif data_split=='test':
-        n_conditions == 102
+        n_conditions = 102
 
     existing_shm = shared_memory.SharedMemory(name=shm)
-    eeg_data = np.ndarray(data_shape, dtype='float32', buffer=existing_shm.buf)
+    eeg_data = np.ndarray(data_shape, dtype=dtype, buffer=existing_shm.buf)
     
     rdm_array = np.zeros((n_conditions, n_conditions))
     
@@ -51,9 +51,9 @@ def compute_rdm(t, data_shape, pseudo_order, shm, data_split='train', distance_t
             
             # Create pseudo-trials
             if data_split == 'test':
-                n_ptrials_repeats = 4
+                n_ptrials_repeats = 12
             elif data_split == 'train':
-                n_ptrials_repeats = 2
+                n_ptrials_repeats = 3
             n_pseudo_trials = int(np.ceil(len(eeg_cond_1) / n_ptrials_repeats))
             pseudo_data_1 = np.zeros((n_pseudo_trials, eeg_cond_1.shape[1]))
             pseudo_data_2 = np.zeros((n_pseudo_trials, eeg_cond_2.shape[1]))
@@ -70,9 +70,18 @@ def compute_rdm(t, data_shape, pseudo_order, shm, data_split='train', distance_t
             if distance_type == 'euclidean':
                 eeg_cond_1 = np.mean(eeg_cond_1,0)
                 eeg_cond_2 = np.mean(eeg_cond_2,0)
-                # distance = np.linalg.norm(eeg_cond_1-eeg_cond_2).astype('float32')
-                distance = np.dot((eeg_cond_1 - eeg_cond_2), np.transpose(eeg_cond_1 - eeg_cond_2)).astype('float32')[0][0] 
+                distance = np.linalg.norm(eeg_cond_1-eeg_cond_2)
+                 
+                rdm_array[v1, v2] = distance
+                rdm_array[v2, v1] = distance
 
+                del eeg_cond_1, eeg_cond_2
+            
+            if distance_type == 'pearson':
+                eeg_cond_1 = np.mean(eeg_cond_1,0)
+                eeg_cond_2 = np.mean(eeg_cond_2,0)
+                distance = np.linalg.norm(eeg_cond_1-eeg_cond_2)
+                 
                 rdm_array[v1, v2] = distance
                 rdm_array[v2, v1] = distance
 
@@ -86,6 +95,9 @@ def compute_rdm(t, data_shape, pseudo_order, shm, data_split='train', distance_t
                     # Define the training/test partitions (LOOCV)
                     train_cond_1 = np.delete(eeg_cond_1, r, 0)
                     train_cond_2 = np.delete(eeg_cond_2, r, 0)
+
+                    if len(train_cond_1.shape) < 2:
+                        dist_train = np.expand_dims(np.mean(train_cond_1, 0) - np.mean(train_cond_2, 0), 0)
                     dist_train = np.expand_dims(np.mean(train_cond_1, 0) - np.mean(train_cond_2, 0), 0)
                     
                     test_cond_1 = np.expand_dims(eeg_cond_1[r], 0)
@@ -142,7 +154,6 @@ def compute_rdm(t, data_shape, pseudo_order, shm, data_split='train', distance_t
     print('timepoint done in {:.4f} seconds'.format(toc-tic))
 
     return (rdm_array, t)
-
 
 
 
