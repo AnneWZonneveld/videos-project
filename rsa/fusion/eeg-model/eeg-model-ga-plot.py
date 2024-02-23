@@ -14,20 +14,27 @@ import argparse
 
 # Take arguments
 parser = argparse.ArgumentParser()
+parser.add_argument('--data_split', default='training', type=str)
+parser.add_argument('--zscore', default=1, type=int)
 parser.add_argument('--alpha', default=0.05, type=float)
 parser.add_argument('--distance_type', default='euclidean-cv', type=str)
-parser.add_argument('--bin_width', default=0, type=float)
-parser.add_argument('--slide', default=0, type=float)
+parser.add_argument('--sfreq', default=0, type=int)
+parser.add_argument('--eval_method', default='spearman', type=str)
+parser.add_argument('--model_metric', default='euclidean', type=str)
 
 args = parser.parse_args()
 
+print('\nInput arguments:')
+for key, val in vars(args).items():
+	print('{:16} {}'.format(key, val))
+
 
 ####################### Load data #######################################
-sub_folder = f'/scratch/azonneveld/rsa/fusion/eeg-model/standard/GA/{args.distance_type}/bin_{args.bin_width}/slide_{args.slide}/' 
-res_folder = f'/scratch/azonneveld/rsa/fusion/eeg-model/standard/plots/GA/'
+sub_folder = f"/scratch/azonneveld/rsa/fusion/eeg-model/{args.data_split}/standard/z_{args.zscore}/GA/model_{args.model_metric}/{args.distance_type}/sfreq_{format(args.sfreq, '04')}/{args.eval_method}/"
+res_folder = f"/scratch/azonneveld/rsa/fusion/eeg-model/{args.data_split}/standard/plots/z_{args.zscore}/GA/model_{args.model_metric}/{args.distance_type}/sfreq_{format(args.sfreq, '04')}/{args.eval_method}/"
 
 if not os.path.exists(res_folder) == True:
-    os.mkdir(res_folder)
+    os.makedirs(res_folder)
 
 features = ['objects', 'scenes', 'actions']
 
@@ -76,6 +83,21 @@ for i in range(len(features)):
 ga_max = np.max(max_cors)
 height_constant = 1.5
 
+sns.set_style('white')
+sns.set_style("ticks")
+sns.set_context('paper', 
+                rc={'font.size': 14, 
+                    'xtick.labelsize': 10, 
+                    'ytick.labelsize':10, 
+                    'axes.titlesize' : 13,
+                    'figure.titleweight': 'bold', 
+                    'axes.labelsize': 13, 
+                    'legend.fontsize': 8, 
+                    'font.family': 'Arial',
+                    'axes.spines.right' : False,
+                    'axes.spines.top' : False})
+
+
 colours = ['b', 'r', 'g']
 fig, ax = plt.subplots(dpi=300)
 for i in range(len(features)):
@@ -95,19 +117,23 @@ for i in range(len(features)):
     stats_df['format_ps'] = format_ps
 
     ax.plot(stats_df['times'], stats_df['cors'], label=feature, color=colour)
-    ax.fill_between(stats_df['times'], stats_df['lower_CI'], stats_df['upper_CI'], color=colour, alpha=.1)
+    ax.fill_between(stats_df['times'], stats_df['lower_CI'], stats_df['upper_CI'], color=colour, alpha=.2)
     ax.plot(stats_df['times'], stats_df['format_ps'], 'ro', color=colour, markersize=3)
 
     height_constant = height_constant - 0.1
 
 ax.axvline(x=0, color='gray', linestyle='--', alpha=0.5)
 ax.axvline(x=3, color='gray', linestyle='--', alpha=0.5)
-ax.set_title(f'EEG-model correlation GA')
+ax.axhline(y=0, color='gray', linestyle='--', alpha=0.5)
+ax.set_title(f'GA level')
 ax.set_xlabel('Time (s)')
-ax.set_ylabel('Spearman cor')
-ax.legend()
+ax.set_ylabel(f'{args.eval_method}')
+ax.legend(loc ='upper left', frameon=False, bbox_to_anchor=(1.04, 1))
+sns.despine(offset= 10, top=True, right=True)
 fig.tight_layout()
 
-img_path = res_folder + f'var_explained_{args.distance_type}_{args.bin_width}.png'
+img_path = res_folder + f"cor_{args.distance_type}_{format(args.sfreq, '04')}.png"
 plt.savefig(img_path)
 plt.clf()
+
+print("Done plotting")

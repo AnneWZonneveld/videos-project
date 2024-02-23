@@ -54,7 +54,7 @@ for key, val in vars(args).items():
 sub_format = format(args.sub, '02') 
 rois = args.rois.split(',')
 if args.data_split == 'train':
-    data_split_format = 'trainging'
+    data_split_format = 'training'
 elif args.data_split == 'test':
     data_split_format = 'testing'
 
@@ -62,19 +62,24 @@ data_dir = f'/scratch/giffordale95/projects/bold_moments/fmri_time_2/fmri_datase
 
 rois_data = {}
 for roi in rois:
-    fmri_file = data_dir + f'/{roi}_TRavg-56789_{data_split_format}.pkl'
-    with open(fmri_file, 'rb') as f: 
-        data = pickle.load(f)
-    if args.data_split == 'train':
-        data = data['train']
-    elif args.data_split == 'test':
-        data = data['test_data']
 
-    # zscore across conditions
-    sc = StandardScaler()
-    data = sc.fit_transform(data.reshape(-1, data.shape[-1])).reshape(data.shape)
+    try:
+        fmri_file = data_dir + f'/{roi}_TRavg-56789_{data_split_format}.pkl'
+        with open(fmri_file, 'rb') as f: 
+            data = pickle.load(f)
+        if args.data_split == 'train':
+            data = data['train']
+        elif args.data_split == 'test':
+            data = data['test_data']
 
-    rois_data[roi] = data
+        # zscore across conditions
+        sc = StandardScaler()
+        data = sc.fit_transform(data.reshape(-1, data.shape[-1])).reshape(data.shape)
+
+        rois_data[roi] = data
+    except:
+         print(f"No data for {roi}")
+         print(f"{data.shape}")
 
 print('Loading fMRI data done')
 
@@ -115,7 +120,7 @@ print('Done multiprocessing')
 roi_res = {}
 for i in range(len(results)):
     key = results[i][0]
-    rdm = results[1][1]
+    rdm = results[i][1]
     roi_res[key] = rdm
 
 # Save 

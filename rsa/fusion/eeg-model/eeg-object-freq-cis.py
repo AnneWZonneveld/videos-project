@@ -23,6 +23,7 @@ n_cpus = 4
 parser = argparse.ArgumentParser()
 parser.add_argument('--sub', default=1, type=int)
 parser.add_argument('--distance_type', default='euclidean-cv', type=str) 
+parser.add_argument('--bin_width', default=0, type=float)
 parser.add_argument('--jobarr_id', default=1, type=int) 
 args = parser.parse_args()
 
@@ -49,6 +50,26 @@ with open(eeg_file, 'rb') as f:
     eeg_data = pickle.load(f)
 eeg_rdms = eeg_data['rdms_array']
 
+
+######################### Temporal smoothening ####################################
+
+if not args.bin_width == 0:
+    og_bin_width = abs(eeg_data['times'][0] - eeg_data['times'][1])
+    smooth_factor = int(round((args.bin_width / og_bin_width), 1))
+    # smooth_factor = round((bin_width / og_bin_width), 1)
+
+    n_samples = int(eeg_rdms.shape[2]/smooth_factor)
+    smooth_eeg_rdms = np.zeros((eeg_rdms.shape[0], eeg_rdms.shape[1], n_samples))
+    t_samples = []
+    for i in range(n_samples):
+        id_1 = int(i * smooth_factor)
+        id_2 = int(id_1 + smooth_factor)
+        smooth_eeg_rdms[:, :, i] = np.mean(eeg_rdms[:,:,id_1:id_2], axis=2)
+        t_samples.append(eeg_data['times'][id_1])
+
+    eeg_data['times'] = t_samples
+    eeg_rdms = smooth_eeg_rdms
+
 ############################# Analysis ###########################################
 
 # Calculate CI
@@ -66,7 +87,7 @@ results_dict = {
 	'times': eeg_data['times']
 }
 
-res_folder = f'/scratch/azonneveld/rsa/fusion/eeg-model/sub-{sub_format}/' 
+res_folder = f'/scratch/azonneveld/rsa/fusion/eeg-model/standard/sub-{sub_format}/{args.distance_type}/bin_{args.bin_width}/' 
 if not os.path.exists(res_folder) == True:
     os.mkdir(res_folder)
 

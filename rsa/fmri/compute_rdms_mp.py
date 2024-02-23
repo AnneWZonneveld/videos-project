@@ -23,35 +23,21 @@ import time
 import copy
 
 
-def compute_rdms_multi(fmri_data, pseudo_order, batch, shm_name, n_cpus=2, data_split='test', distance_type='pearson'):
+def compute_rdms_multi(fmri_data, pseudo_order, batch, shm_name, n_cpus, data_split='test', distance_type='pearson'):
 
-    # Allocating array
-    if data_split=='train':
-        n_conditions = 1000
-    elif data_split=='test':
-        n_conditions = 102
-    
-    # Creating shared dictionary
-    with Manager() as manager:
+    # Parallel calculating of RDMs for rois
+    partial_compute_rdm = partial(compute_rdm,
+                                fmri_data = fmri_data,
+                                pseudo_order= pseudo_order,
+                                shm_name = shm_name,
+                                data_split=data_split,
+                                distance_type= distance_type)
 
-        shared_dict = manager.Namespace()
-        setattr(shared_dict, shm_name, manager.dict(fmri_data))
-
-        # Parallel calculating of RDMs for rois
-        partial_compute_rdm = partial(compute_rdm,
-                                    shared_dict = shared_dict,
-                                    pseudo_order=pseudo_order,
-                                    shm_name = shm_name,
-                                    data_split=data_split,
-                                    distance_type= distance_type)
-
-        tic = time.time()
-        rois = fmri_data.keys()
-        pool = mp.Pool(n_cpus)
-        results = pool.map(partial_compute_rdm, rois)
-        pool.close()
-        toc = time.time()
-
-    print('permutation done in {:.4f} seconds'.format(toc-tic))
+    tic = time.time()
+    rois = fmri_data.keys()
+    pool = mp.Pool(n_cpus)
+    results = pool.map(partial_compute_rdm, rois)
+    pool.close()
+    toc = time.time()
 
     return(list(results))

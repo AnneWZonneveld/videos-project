@@ -7,6 +7,7 @@ import seaborn as sns
 from IPython import embed as shell
 from sklearn.metrics import pairwise_distances
 from scipy.spatial.distance import squareform
+from scipy.stats import pearsonr
 from sklearn.utils import resample
 import tensorflow as tf
 from sklearn.preprocessing import StandardScaler
@@ -19,7 +20,7 @@ from multiprocessing import current_process, cpu_count
 import time
 
 
-def compute_rdm(roi, shared_dict, pseudo_order, shm_name, data_split='test', distance_type='pearson'):
+def compute_rdm(roi, fmri_data, pseudo_order, shm_name, data_split='test', distance_type='pearson'):
 
     print(f'compute rdm for {roi}')
     tic = time.time()
@@ -29,7 +30,6 @@ def compute_rdm(roi, shared_dict, pseudo_order, shm_name, data_split='test', dis
     elif data_split=='test':
         n_conditions = 102
 
-    fmri_data = getattr(shared_dict, shm_name)
     roi_data = fmri_data[roi]
     
     rdm_array = np.zeros((n_conditions, n_conditions))
@@ -79,7 +79,7 @@ def compute_rdm(roi, shared_dict, pseudo_order, shm_name, data_split='test', dis
             if distance_type == 'pearson':
                 fmri_cond_1 = np.mean(fmri_cond_1,0)
                 fmri_cond_2 = np.mean(fmri_cond_2,0)
-                distance = np.linalg.norm(fmri_cond_1-fmri_cond_2)
+                distance =  1 - pearsonr(fmri_cond_1, fmri_cond_2)[0]
                  
                 rdm_array[v1, v2] = distance
                 rdm_array[v2, v1] = distance
