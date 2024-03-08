@@ -22,15 +22,21 @@ import time
 from fmri_model_utils import *
 
 
-def calc_cor_mp(rois, fmri_data, feature_rdm, its=10, n_cpus=2, eval_method='spearman'):
+def calc_cor_mp(rois, fmri_data, feature_rdm, its=10, n_cpus=2, eval_method='spearman', booted=False):
 
     # Parallel calculating of r^2 for timepoints
-    partial_calc_cor = partial(calc_corr,
-                                    fmri_data = fmri_data,
-                                    feature_rdm = feature_rdm,
-                                    eval_method = eval_method,
-                                    its=its)
-
+    if booted == False:
+        partial_calc_cor = partial(calc_corr,
+                                        fmri_data = fmri_data,
+                                        feature_rdm = feature_rdm,
+                                        eval_method = eval_method,
+                                        its=its)
+    else:
+        partial_calc_cor = partial(calc_corr_boot,
+                                fmri_data = fmri_data,
+                                feature_rdm = feature_rdm,
+                                eval_method = eval_method,
+                                its=its)
 
     tic = time.time()
     pool = mp.Pool(n_cpus)

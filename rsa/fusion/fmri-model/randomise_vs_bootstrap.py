@@ -12,10 +12,9 @@ from scipy.stats import pearsonr, spearmanr
 import argparse
 from fmri_model_mp import *
 
-n_cpus = 8
+n_cpus = 4
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--sub', type=int)
 parser.add_argument('--feature', type=str)
 parser.add_argument('--distance_type', default='pearson', type=str) 
 parser.add_argument('--data_split', default='training', type=str)
@@ -29,7 +28,6 @@ for key, val in vars(args).items():
 	print('{:16} {}'.format(key, val))
      
 rois = args.rois.split(',') 
-sub_format = format(args.sub, '02')
 
 ####################### Load model RDM & neural data ###############################
 print('Loading model rdms')
@@ -38,21 +36,38 @@ with open(model_file, 'rb') as f:
     model_rdms = pickle.load(f)
 model_rdm = model_rdms[args.data_split][args.feature]
 
-fmri_file = f'/scratch/azonneveld/rsa/fmri/rdms/sub-{sub_format}/{args.distance_type}/{args.data_split}_rdms.pkl'
+fmri_file = f'/scratch/azonneveld/rsa/fmri/rdms/GA/{args.distance_type}/GA_{args.data_split}_rdm.pkl'
 with open(fmri_file, 'rb') as f: 
     data = pickle.load(f)
-fmri_rdms = data['results']
+fmri_rdms = data['rdm_array']
 
 ###################### Analysis ###################################################
 
-print("Start multiprocessing cis calc")
-results = calc_cis_mp(rois=rois, fmri_data=fmri_rdms, feature_rdm=model_rdm, its=1000, n_cpus=n_cpus, eval_method=args.eval_method)
+print("Start multiprocessing correlation calc")
+print(f"ROIs main {rois}")
+results = calc_cor_mp(rois=rois, fmri_data=fmri_rdms, feature_rdm=model_rdm, its=10000, n_cpus=n_cpus, eval_method=args.eval_method, booted=True)
 print("Done multiprocessing")
 
 rois_dict = {}
 for i in range(len(rois)):
     roi = rois[i]
     rois_dict[roi] = results[i]
+
+################# Noise normalize ################################################
+nn_rois_dict = {}
+for i in range(len(rois)):
+    roi = rois[i]
+    roi_data = rois_dict[roi]
+
+    nc_file = f'/scratch/azonneveld/rsa/fmri/noise_ceiling/{args.data_split}/{args.distance_type}/{roi}/noise_ceiling.pkl'
+    with open(nc_file, 'rb') as f: 
+        data = pickle.load(f)
+    nc = data['results']
+
+    nn_roi_data = roi_data[0] / nc['UpperBound']
+    nn_rois_dict[roi] = (nn_roi_data, roi_data[1])
+
+rois_dict = nn_rois_dict
 
 ############################ Save results ############################
 results_dict = {
@@ -64,10 +79,11 @@ results_dict = {
     'results': rois_dict
 }
 
-res_folder = f'/scratch/azonneveld/rsa/fusion/fmri-model/{args.data_split}/model_{args.model_metric}/sub-{sub_format}/{args.distance_type}/{args.eval_method}/'
+res_folder = f'/scratch/azonneveld/rsa/fusion/fmri-model/{args.data_split}/model_{args.model_metric}/GA/{args.distance_type}/{args.eval_method}/'
 if os.path.isdir(res_folder) == False:
 	os.makedirs(res_folder)
-res_file = res_folder + f'cis_{args.feature}.pkl'
+     
+res_file = res_folder + f'cors_{args.feature}_booted.pkl'
 
 with open(res_file, 'wb') as f:
     pickle.dump(results_dict, f)

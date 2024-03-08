@@ -14,7 +14,6 @@ from statsmodels.stats.multitest import fdrcorrection, multipletests
 
 # Take arguments
 parser = argparse.ArgumentParser()
-parser.add_argument('--sub', default=1, type=int)
 parser.add_argument('--data_split', default='training', type=str)
 parser.add_argument('--alpha', default=0.05, type=float)
 parser.add_argument('--distance_type', default='euclidean-cv', type=str)
@@ -27,12 +26,12 @@ print('\nInput arguments:')
 for key, val in vars(args).items():
 	print('{:16} {}'.format(key, val))
 
-sub_format = format(args.sub, '02')
+
 ####################### Load data #######################################
 features = ['objects', 'scenes', 'actions']     
 
-data_folder = f'/scratch/azonneveld/rsa/fusion/fmri-model/{args.data_split}/model_{args.model_metric}/sub-{sub_format}/{args.distance_type}/{args.eval_method}/'
-res_folder = f'/scratch/azonneveld/rsa/fusion/fmri-model/plots/standard/{args.data_split}/model_{args.model_metric}/sub-{sub_format}/{args.distance_type}/{args.eval_method}/'
+data_folder = f'/scratch/azonneveld/rsa/fusion/fmri-model/{args.data_split}/model_{args.model_metric}/GA/{args.distance_type}/{args.eval_method}/'
+res_folder = f'/scratch/azonneveld/rsa/fusion/fmri-model/plots/standard/{args.data_split}/model_{args.model_metric}/GA/{args.distance_type}/{args.eval_method}/'
 if not os.path.exists(res_folder) == True:
     os.makedirs(res_folder)
 
@@ -55,26 +54,21 @@ for feature in features:
         cis_data = pickle.load(f)
     
     rois = cor_data['results'].keys()
-    nan_rois = []
     ps_per_feat = []
     for roi in rois:
-        if np.isnan(cor_data['results'][roi][0]) == False: 
-            all_cors.append(cor_data['results'][roi][0])
-            all_ps.append(cor_data['results'][roi][1])
-            ps_per_feat.append(cor_data['results'][roi][1])
-            all_cis_lower.append(cis_data['results'][roi][0])
-            all_cis_upper.append(cis_data['results'][roi][1])
-            all_features.append(feature)
-            all_rois.append(roi)
-        else:
-            nan_rois.append(roi)
-            
-    adj_ps_per_feat = multipletests(ps_per_feat, alpha=0.05, method='bonferroni')[1]
-
+        all_cors.append(cor_data['results'][roi][0])
+        all_ps.append(cor_data['results'][roi][1])
+        ps_per_feat.append(cor_data['results'][roi][1])
+        all_cis_lower.append(cis_data['results'][roi][0])
+        all_cis_upper.append(cis_data['results'][roi][1])
+        all_features.append(feature)
+        all_rois.append(roi)
+    
+    # adj_ps_per_feat = fdrcorrection(ps_per_feat, alpha=0.05)[1]
+    adj_ps_per_feat = multipletests(ps_per_feat, alpha=0.05, method='bonferonni')[1]
     for i in adj_ps_per_feat:
         adj_ps.append(i)
-        
-            
+
 df = pd.DataFrame()
 df['feature'] = all_features
 df['roi'] = all_rois
@@ -104,11 +98,12 @@ sns.set_context('paper',
 colors = {'objects': 'blue', 'scenes': 'red', 'actions': 'green'}
 
 fig, ax = plt.subplots(dpi=400, figsize=(12,6))
+# sns.barplot(data=df, x="roi", y="cor", hue="feature", palette=colors,
+#             yerr= np.vstack((np.array(df['cor'] - df['cis_lower']), np.array(df['cis_upper'] - df['cor']))))
 sns.barplot(data=df, x="roi", y="cor", hue="feature", palette=colors)
 
-ps_index = 0
 for i, p in enumerate(ax.patches):
-    if i == len(df):
+    if i == 66:
          break
     sign = df['sign'].iloc[i]
     cor = df['cor'].iloc[i]
@@ -119,16 +114,16 @@ for i, p in enumerate(ax.patches):
     ax.errorbar(x=(p.get_x() + p.get_width() / 2.), y=p.get_height(), yerr=np.array(cor - ci_low, ci_up - cor), ls='', lw=1, color='black')
 
 
-ax.set_title(f'fmri-model sub {args.sub} bonferroni')
+ax.set_title(f'fmri-model correlation')
 ax.set_xlabel('rois')
-ax.set_ylabel(f'{args.eval_method}')
+# ax.set_ylabel(f'{args.eval_method}')
+ax.set_ylabel('spearman')
 ax.legend(loc ='upper left', frameon=False, bbox_to_anchor=(1.04, 1))
 sns.despine(offset= 10, top=True, right=True)
 plt.xticks(rotation=45)
 fig.tight_layout()
 
-# img_path = res_folder + f'cor_plot.png'
-img_path = res_folder + f'cor_plot_bonferroni.png'
+img_path = res_folder + f'cor_plot.png'
 plt.savefig(img_path)
 plt.clf()
 

@@ -29,6 +29,7 @@ def corr_nullDist(rdm_cor, rdm_1, rdm_2, its=100, eval_method='spearman'):
             print(f'null distr iteration: {i}')
 
         # Create a random index that respects the structure of an rdm.
+        random.seed(i)
         shuffle = np.random.choice(rdm_1.shape[0], rdm_1.shape[0],replace=False)
 
         # shuffle RDM consistently for both dims
@@ -43,41 +44,40 @@ def corr_nullDist(rdm_cor, rdm_1, rdm_2, its=100, eval_method='spearman'):
         elif eval_method == 'euclidean':
             rdm_cor = np.linalg.norm(squareform(shuffled_rdm_1, checks=False) - squareform(rdm_2, checks=False))
     
-    # Calc p value
+    # Calc p value (two sided)
     rdm_corr_null = np.array(rdm_corr_null)
-    p_val = np.mean(rdm_corr_null>rdm_cor) 
+    p_val = np.mean(abs(rdm_corr_null)>abs(rdm_cor), dtype='float64')
+    print(f'p_value: {p_val}')
+
+    # # Plot null distribution
+    # cor = spearmanr(squareform(rdm_1, checks=False), squareform(rdm_2, checks=False))[0]
+
+    # fig, axes = plt.subplots(dpi=300)
+    # sns.displot(rdm_corr_null, bins=50)
+    # axes.set_title(f'Null distr')
+    # axes.set_ylabel('Spearman')
+
+    # fig = sns.displot(rdm_corr_null, bins=50)
+    # fig.set_axis_labels("Spearman")
+    # plt.axvline(cor, color="red")
+
+    # fig.tight_layout()
+
+    # res_folder  = f'/scratch/azonneveld/rsa/fusion/fmri-model/plots/standard/test/model_euclidean/GA/pearson/spearman/'
+    # if not os.path.exists(res_folder) == True:
+    #     os.makedirs(res_folder)
+
+    # img_path = res_folder + f'null_{its}_V1v_actions.png'
+    # plt.savefig(img_path)
+    # plt.clf()
+
 
     return p_val
 
 
-def calc_corr(roi, fmri_data, feature_rdm, its, eval_method='spearman'):
+def corr_nullDist_boot(fmri_rdm, feature_rdm, its, eval_method='spearman'):
 
-    print(f'Calculating cor {roi}')
     tic = time.time()
-
-    fmri_rdm=fmri_data[roi]
-
-    if eval_method == 'spearman':
-        rdm_cor = spearmanr(squareform(fmri_rdm, checks=False), squareform(feature_rdm, checks=False))[0] 
-    elif eval_method == 'pearson':
-        rdm_cor = pearsonr(squareform(fmri_rdm, checks=False), squareform(feature_rdm, checks=False))[0] 
-    elif eval_method == 'euclidean': 
-        rdm_cor = np.linalg.norm(squareform(fmri_rdm, checks=False) - squareform(feature_rdm, checks=False))
-    
-    rdm_cor_p = corr_nullDist(rdm_cor, fmri_rdm, feature_rdm, its=its, eval_method=eval_method) 
-
-    toc = time.time()
-
-
-    return (rdm_cor, rdm_cor_p)
-
-
-def cor_variability(roi, fmri_data, feature_rdm, its, eval_method='spearman'):
-
-    print(f'Calculating cis {roi}')
-    tic = time.time()
-
-    fmri_rdm=fmri_data[roi]
 
     fmri_rdm_vec = squareform(fmri_rdm, checks=False)
     feature_rdm_vec = squareform(feature_rdm, checks=False)
@@ -92,6 +92,7 @@ def cor_variability(roi, fmri_data, feature_rdm, its, eval_method='spearman'):
             print(f'cor var iteration: {i}')
 
         # Create a random index that respects the structure of an rdm.
+        random.seed(i)
         sample = np.random.choice(fmri_rdm_vec.shape[0], fmri_rdm_vec.shape[0],replace=True) 
 
         # Subsample from both the reference and the feature RDM
@@ -106,26 +107,130 @@ def cor_variability(roi, fmri_data, feature_rdm, its, eval_method='spearman'):
         elif eval_method == 'euclidean':
             rdm_corr_boots.append(np.linalg.norm(fmri_rdm_sample - feature_rdm_sample))
 
-
-    # Get 95% confidence interval
-    lower_p = np.percentile(rdm_corr_boots, 2.5)
-    upper_p = np.percentile(rdm_corr_boots, 97.5)
-
-    # # Temp
-    # fig, axes = plt.subplots(dpi=300)
-    # sns.displot(rdm_corr_boots, bins=50)
-    # axes.set_title(f'Bootstrap dist sub {sub}, t={t}')
-    # axes.set_ylabel('Spearman')
-
-    # fig.tight_layout()
-
-    # img_path = f'/scratch/azonneveld/rsa/fusion/eeg-model/standard/plots/z_0/sub-01/cor-dist-{t}'
-    # plt.savefig(img_path)
-    # plt.clf()
+    # Calc p value (two sided)
+    rdm_corr_null = np.array(rdm_corr_boots)
+    p_val = np.mean(abs(rdm_corr_null)>abs(0))
 
     toc = time.time()
 
-    return (lower_p, upper_p)
+    return p_val
+
+
+def calc_corr(roi, fmri_data, feature_rdm, its, eval_method='spearman'):
+
+    print(f'Calculating cor {roi}')
+    tic = time.time()
+
+    try:
+        fmri_rdm=fmri_data[roi]
+
+        if eval_method == 'spearman':
+            rdm_cor = spearmanr(squareform(fmri_rdm, checks=False), squareform(feature_rdm, checks=False))[0] 
+        elif eval_method == 'pearson':
+            rdm_cor = pearsonr(squareform(fmri_rdm, checks=False), squareform(feature_rdm, checks=False))[0] 
+        elif eval_method == 'euclidean': 
+            rdm_cor = np.linalg.norm(squareform(fmri_rdm, checks=False) - squareform(feature_rdm, checks=False))
+        
+        rdm_cor_p = corr_nullDist(rdm_cor, fmri_rdm, feature_rdm, its=its, eval_method=eval_method) 
+
+        toc = time.time()
+
+        return (rdm_cor, rdm_cor_p)
+    except:
+        print(f'{roi} not present')
+
+        return (np.nan, np.nan)
+
+
+def calc_corr_boot(roi, fmri_data, feature_rdm, its, eval_method='spearman'):
+
+    print(f'Calculating cor {roi}')
+    tic = time.time()
+
+    try:
+        fmri_rdm=fmri_data[roi]
+
+        if eval_method == 'spearman':
+            rdm_cor = spearmanr(squareform(fmri_rdm, checks=False), squareform(feature_rdm, checks=False))[0] 
+        elif eval_method == 'pearson':
+            rdm_cor = pearsonr(squareform(fmri_rdm, checks=False), squareform(feature_rdm, checks=False))[0] 
+        elif eval_method == 'euclidean': 
+            rdm_cor = np.linalg.norm(squareform(fmri_rdm, checks=False) - squareform(feature_rdm, checks=False))
+        
+        rdm_cor_p = corr_nullDist_boot(fmri_rdm=fmri_rdm, feature_rdm=feature_rdm, its=its, eval_method=eval_method) 
+
+        toc = time.time()
+
+        return (rdm_cor, rdm_cor_p)
+    
+    except:
+        print(f'{roi} not present')
+
+        return (np.nan, np.nan)
+
+
+
+
+def cor_variability(roi, fmri_data, feature_rdm, its, eval_method='spearman'):
+
+    print(f'Calculating cis {roi}')
+    tic = time.time()
+
+    try: 
+        fmri_rdm=fmri_data[roi]
+
+        fmri_rdm_vec = squareform(fmri_rdm, checks=False)
+        feature_rdm_vec = squareform(feature_rdm, checks=False)
+
+        tic = time.time()
+
+        rdm_corr_boots = []
+
+        for i in range(its):
+
+            if i % 100 == 0:
+                print(f'cor var iteration: {i}')
+
+            # Create a random index that respects the structure of an rdm.
+            random.seed(i)
+            sample = np.random.choice(fmri_rdm_vec.shape[0], fmri_rdm_vec.shape[0],replace=True) 
+
+            # Subsample from both the reference and the feature RDM
+            fmri_rdm_sample = fmri_rdm_vec[sample] 
+            feature_rdm_sample = feature_rdm_vec[sample] 
+
+            # correlating with neural similarty matrix
+            if eval_method == 'spearman':
+                rdm_corr_boots.append(spearmanr(fmri_rdm_sample, feature_rdm_sample)[0])
+            elif eval_method == 'pearson':
+                rdm_corr_boots.append(pearsonr(fmri_rdm_sample, feature_rdm_sample)[0])
+            elif eval_method == 'euclidean':
+                rdm_corr_boots.append(np.linalg.norm(fmri_rdm_sample - feature_rdm_sample))
+
+
+        # Get 95% confidence interval
+        lower_p = np.percentile(rdm_corr_boots, 2.5)
+        upper_p = np.percentile(rdm_corr_boots, 97.5)
+
+        # # Temp
+        # fig, axes = plt.subplots(dpi=300)
+        # sns.displot(rdm_corr_boots, bins=50)
+        # axes.set_title(f'Bootstrap dist sub {sub}, t={t}')
+        # axes.set_ylabel('Spearman')
+
+        # fig.tight_layout()
+
+        # img_path = f'/scratch/azonneveld/rsa/fusion/eeg-model/standard/plots/z_0/sub-01/cor-dist-{t}'
+        # plt.savefig(img_path)
+        # plt.clf()
+
+        toc = time.time()
+
+        return (lower_p, upper_p)
+    except:
+        print(f'{roi} not present')
+
+        return (np.nan, np.nan)
 
 
 def corr_nullDist_rw(vp_scores, design_matrices, fmri_rdm, its=100):
