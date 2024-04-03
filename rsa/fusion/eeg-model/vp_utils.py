@@ -29,6 +29,7 @@ def corr_nullDist(rdm_cor, rdm_1, rdm_2, its=100, eval_method='spearman'):
             print(f'null distr iteration: {i}')
 
         # Create a random index that respects the structure of an rdm.
+        random.seed(i)
         shuffle = np.random.choice(rdm_1.shape[0], rdm_1.shape[0],replace=False)
 
         # shuffle RDM consistently for both dims
@@ -167,7 +168,7 @@ def calc_rsquared(t, data_shape, dtype, feature_rdm, shm, its=10, eval_method='s
     return (rdm_cor, rdm_cor_p)
 
 
-def cor_variability(t, data_shape, dtype, feature_rdm, shm, its=100, eval_method='spearman'):
+def cor_variability(t, data_shape, dtype, feature_rdm, shm, feature='objects', distance_type='pearson', data_split='train', its=100, eval_method='spearman'):
 
     print(f'Calculating CI t= {t}')
 
@@ -188,6 +189,7 @@ def cor_variability(t, data_shape, dtype, feature_rdm, shm, its=100, eval_method
             print(f'cor var iteration: {i}')
 
         # Create a random index that respects the structure of an rdm.
+        random.seed(i)
         sample = np.random.choice(eeg_rdm_vec.shape[0], eeg_rdm_vec.shape[0],replace=True) 
 
         # Subsample from both the reference and the feature RDM
@@ -202,27 +204,135 @@ def cor_variability(t, data_shape, dtype, feature_rdm, shm, its=100, eval_method
         elif eval_method == 'euclidean':
             rdm_corr_boots.append(np.linalg.norm(eeg_rdm_sample - feature_rdm_sample))
 
-
     # Get 95% confidence interval
     lower_p = np.percentile(rdm_corr_boots, 2.5)
     upper_p = np.percentile(rdm_corr_boots, 97.5)
 
-    # # Temp
-    # fig, axes = plt.subplots(dpi=300)
-    # sns.displot(rdm_corr_boots, bins=50)
-    # axes.set_title(f'Bootstrap dist sub {sub}, t={t}')
-    # axes.set_ylabel('Spearman')
+    # # Plot bootstrapped distribution
+    # cor = spearmanr(eeg_rdm_vec, feature_rdm_vec)[0]
+    # if t in [5, 20, 60, 100, 140]:
+    #     fig, axes = plt.subplots(dpi=300)
+    #     sns.displot(rdm_corr_boots, bins=50)
+    #     axes.set_title(f'Bootstrapped dist {distance_type}, t={t}')
+    #     axes.set_ylabel('Spearman')
 
-    # fig.tight_layout()
+    #     fig = sns.displot(rdm_corr_boots, bins=50)
+    #     fig.set_axis_labels("Spearman")
+    #     plt.axvline(cor, color="red")
 
-    # img_path = f'/scratch/azonneveld/rsa/fusion/eeg-model/standard/plots/z_0/sub-01/cor-dist-{t}'
-    # plt.savefig(img_path)
-    # plt.clf()
+    #     # Confidence inquantilervals:
+    #     plt.axvline(lower_p, color='gray', ls='--') # 2.5%
+    #     plt.axvline(upper_p, color='gray', ls='--')
+
+    #     fig.tight_layout()
+
+    #     res_folder  = f'/scratch/azonneveld/rsa/fusion/eeg-model/{data_split}/standard/plots/z_1/GA/model_euclidean/{distance_type}/sfreq_0500/spearman/'
+    #     if not os.path.exists(res_folder) == True:
+    #         os.makedirs(res_folder)
+
+    #     img_path = res_folder + f'boots_t{t}_{its}_{feature}.png'
+    #     plt.savefig(img_path)
+    #     plt.clf()
 
     toc = time.time()
     print(f'iteration {t} in {toc-tic}')
 
     return (lower_p, upper_p)
+
+
+def cor_variability_rw(t, data_shape, dtype, design_matrices, shm, its=100, eval_method='spearman'):
+
+    print(f'Calculating CI t= {t}')
+
+    existing_shm = shared_memory.SharedMemory(name=shm)
+    eeg_rdms = np.ndarray(data_shape, dtype=dtype, buffer=existing_shm.buf)
+    eeg_rdm = eeg_rdms[:, :, t]
+    eeg_rdm_vec = squareform(eeg_rdm, checks=False)
+    
+    tic = time.time()
+
+    vp_boot_scores = {
+        'u_a': [],
+        'u_s': [],
+        'u_o': [],
+        'os_shared' : [],
+        'sa_shared' : [],
+        'oa_shared' : [],
+        'osa_shared'  : [],
+        'o_total' : [],
+        's_total': [], 
+        'a_total' : [],
+        'all_parts': []
+        }
+
+    for i in range(its):
+
+        if i % 100 == 0:
+            print(f'cor var iteration: {i}')
+
+        # Create a random index that respects the structure of an rdm.
+        random.seed(i)
+        sample = np.random.choice(eeg_rdm_vec.shape[0], eeg_rdm_vec.shape[0],replace=True) 
+
+        # Subsample from both the reference and the feature RDM when calculating R2 for different models
+        eeg_rdm_sample = eeg_rdm_vec[sample] 
+        r2_scores = {}
+        models = design_matrices.keys()
+        for model in models:
+            design_matrix = design_matrices[model]
+            design_matrix_sample = design_matrix[sample]
+            model_fit = LinearRegression().fit(design_matrix_sample, eeg_rdm_sample)
+            r2 = model_fit.score(design_matrix_sample, eeg_rdm_sample)
+            r2_scores[model] = r2*100
+
+        # Perform variance partitioning 
+        u_a_r2 = r2_scores['o-s-a'] - r2_scores['o-s']
+        u_s_r2 = r2_scores['o-s-a'] - r2_scores['o-a']
+        u_o_r2 = r2_scores['o-s-a'] - r2_scores['s-a']
+
+        os_shared_r2 = r2_scores['o-s-a'] - r2_scores['a'] - u_o_r2 - u_s_r2
+        sa_shared_r2 = r2_scores['o-s-a'] - r2_scores['o'] - u_s_r2 - u_a_r2
+        oa_shared_r2 = r2_scores['o-s-a'] - r2_scores['s'] - u_o_r2 - u_a_r2
+
+        osa_shared_r2 = r2_scores['o-s-a'] - u_o_r2 - u_s_r2 - u_a_r2 - os_shared_r2 - sa_shared_r2 - oa_shared_r2
+
+        o_total_r2 = u_o_r2 +  os_shared_r2 + oa_shared_r2 + osa_shared_r2
+        s_total_r2 = u_s_r2 + os_shared_r2 + sa_shared_r2 + osa_shared_r2
+        a_total_r2 = u_a_r2 + oa_shared_r2 + sa_shared_r2 + osa_shared_r2
+
+        all_parts = u_o_r2 + u_s_r2 + u_a_r2 + os_shared_r2 + sa_shared_r2 + oa_shared_r2 + osa_shared_r2
+
+        vp_boot_scores['u_a'].append(u_a_r2)
+        vp_boot_scores['u_s'].append(u_s_r2)
+        vp_boot_scores['u_o'].append(u_o_r2)
+        vp_boot_scores['os_shared'].append(os_shared_r2)
+        vp_boot_scores['sa_shared'].append(sa_shared_r2)
+        vp_boot_scores['oa_shared'].append(oa_shared_r2)
+        vp_boot_scores['osa_shared'].append(osa_shared_r2)
+        vp_boot_scores['o_total'].append(o_total_r2)
+        vp_boot_scores['s_total'].append(s_total_r2)
+        vp_boot_scores['a_total'].append(a_total_r2)
+        vp_boot_scores['all_parts'].append(all_parts)
+
+    # Get 95 % confidence intervals
+    ci_vals= {}
+    ci_vals['u_a'] = (np.percentile(vp_boot_scores['u_a'], 2.5), np.percentile(vp_boot_scores['u_a'], 97.5))
+    ci_vals['u_o'] = (np.percentile(vp_boot_scores['u_o'], 2.5), np.percentile(vp_boot_scores['u_o'], 97.5))
+    ci_vals['u_s'] = (np.percentile(vp_boot_scores['u_s'], 2.5), np.percentile(vp_boot_scores['u_s'], 97.5))
+    ci_vals['os_shared'] = (np.percentile(vp_boot_scores['os_shared'], 2.5), np.percentile(vp_boot_scores['os_shared'], 97.5))
+    ci_vals['sa_shared'] = (np.percentile(vp_boot_scores['sa_shared'], 2.5), np.percentile(vp_boot_scores['sa_shared'], 97.5))
+    ci_vals['oa_shared'] = (np.percentile(vp_boot_scores['oa_shared'], 2.5), np.percentile(vp_boot_scores['oa_shared'], 97.5))
+    ci_vals['osa_shared'] = (np.percentile(vp_boot_scores['oa_shared'], 2.5), np.percentile(vp_boot_scores['osa_shared'], 97.5))
+    ci_vals['a_total'] = (np.percentile(vp_boot_scores['a_total'], 2.5), np.percentile(vp_boot_scores['a_total'], 97.5))
+    ci_vals['o_total'] = (np.percentile(vp_boot_scores['o_total'], 2.5), np.percentile(vp_boot_scores['o_total'], 97.5))
+    ci_vals['s_total'] = (np.percentile(vp_boot_scores['s_total'], 2.5), np.percentile(vp_boot_scores['s_total'], 97.5))
+    ci_vals['all_parts'] = (np.percentile(vp_boot_scores['all_parts'], 2.5), np.percentile(vp_boot_scores['all_parts'], 97.5))
+
+
+    toc = time.time()
+    print(f'iteration {t} in {toc-tic}')
+
+    return ci_vals
 
 
 
