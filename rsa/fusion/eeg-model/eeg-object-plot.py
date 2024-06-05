@@ -1,3 +1,24 @@
+"""
+Plotting EEG-model fusion results comparing frequency based object model and average based object model. 
+
+Code outdated.
+
+Parameters
+----------
+sub: int
+    Subject nr
+alpha: float
+    Significance threshold.
+distance_type: str
+    Whether to use EEG RDMs based on 'euclidean', 'euclidean-cv', 'classification' (a.k.a. decoding accuracy), or 'dv-classification' 
+bin_width: int
+    Bin width used for EEG smoothening
+
+"""
+
+
+
+
 import os
 import pandas as pd
 import numpy as np
@@ -65,8 +86,7 @@ for i in range(len(ob_types)):
         cis_low[ob_type].append(cis_values[i][0])
         cis_up[ob_type].append(cis_values[i][1])
     
-    # ps[ob_type] = fdrcorrection(ps[ob_type], alpha=args.alpha)[1]
-    ps[ob_type] = fdrcorrection(ps[ob_type], alpha=alpha)[1]
+    ps[ob_type] = fdrcorrection(ps[ob_type], alpha=args.alpha)[1]
 
 
 ######################### Plot ####################################
@@ -78,8 +98,7 @@ for i in range(len(ob_types)):
 
     stats_df = pd.DataFrame()
     stats_df['cors'] = cors[ob_type]
-    # stats_df['ps'] = np.array(ps[feature]) < args.alpha
-    stats_df['ps'] = np.array(ps[ob_type]) < alpha
+    stats_df['ps'] = np.array(ps[ob_type]) < args.alpha
     stats_df['lower_CI'] = cis_low[ob_type]
     stats_df['upper_CI'] = cis_up[ob_type]
     stats_df['times'] = cor_res['times']

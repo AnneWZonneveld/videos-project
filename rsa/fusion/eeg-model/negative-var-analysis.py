@@ -1,3 +1,28 @@
+"""
+Plotting different variance partitiongs to explore the origin of negative shared variance. 
+
+Code outdated.
+
+Parameters
+----------
+sub: int
+    Subject nr
+distance_type: str
+    Whether to use EEG RDMs based on 'euclidean', 'euclidean-cv', 'classification' (a.k.a. decoding accuracy), or 'dv-classification' 
+bin_width: int
+    Bin width used for EEG smoothening
+zscore: int
+    To use zscored EEG data y/n
+slide: int
+    To use centre-binned EEG data y/n
+ridge: int
+    To use ridge regression y/n
+cv_r2 : int
+    To calculate cv validated r2 y/n
+
+"""
+
+
 import os
 import pandas as pd
 import numpy as np

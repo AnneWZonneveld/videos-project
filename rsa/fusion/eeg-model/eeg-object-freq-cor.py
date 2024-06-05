@@ -1,3 +1,23 @@
+"""
+Calculating the similarity between object model RDM based using the 'most frequent label'  
+and EEG RDMs for all time points for subject level.
+
+(to enable comparison to using object model RDM using the average embedding)
+
+Code outdated.
+
+Parameters
+----------
+sub: int
+    Subject nr
+distance_type: str
+    Whether to use EEG RDMs based on 'euclidean', 'euclidean-cv', 'classification' (a.k.a. decoding accuracy), or 'dv-classification' 
+bin_width: int
+    Bin width used for EEG smoothening
+
+"""
+
+
 import os
 import pandas as pd
 import numpy as np
