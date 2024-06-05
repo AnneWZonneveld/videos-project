@@ -21,6 +21,30 @@ import time
 
 
 def compute_rdm(roi, fmri_data, pseudo_order, shm_name, data_split='test', distance_type='pearson'):
+    """ Compute fmri-based RDM for ROI.
+
+	Parameters
+	----------
+	ROI : str
+        ROI
+	fmri_data: dictionary 
+        fMRI data for all ROIs
+	pseudo_order : list of tuples
+		Array with pseudo order of trials (conditions)
+	shm_name : str
+        Shared memory name
+	data_split: str
+        Train or test. 
+    distance_type: str
+        Distance type: euclidean, pearson, euclidean-cv, classification or dv-classification
+
+
+	Returns
+	-------
+	(roi, rdm_array)
+        Name of ROI, RDM for that ROI
+
+	"""
 
     print(f'compute rdm for {roi}')
     tic = time.time()
@@ -175,6 +199,6 @@ def compute_rdm(roi, fmri_data, pseudo_order, shm_name, data_split='test', dista
     
     toc = time.time()
     print(f'rdm for {roi} done ')
-    print('timepoint done in {:.4f} seconds'.format(toc-tic))
+    print('in {:.4f} seconds'.format(toc-tic))
 
     return (roi, rdm_array)

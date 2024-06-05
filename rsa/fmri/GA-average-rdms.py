@@ -1,3 +1,19 @@
+"""
+Creating group level RDMs based on subject-level RDMs.
+
+Parameters
+----------
+
+data_split: str
+    Train or test. 
+distance_type: str
+    Whether to base the RDMs on 'euclidean', 'euclidean-cv', 'classification' (a.k.a. decoding accuracy), or 'dv-classification' 
+rois: str
+    String with names of all ROIs to compute RDMs for.
+
+"""
+
+
 import glob
 import numpy as np
 import pickle

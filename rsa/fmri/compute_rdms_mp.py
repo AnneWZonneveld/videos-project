@@ -24,6 +24,31 @@ import copy
 
 
 def compute_rdms_multi(fmri_data, pseudo_order, batch, shm_name, n_cpus, data_split='test', distance_type='pearson'):
+    """ Creates shared memory and sets up parallel computing (over different ROIs) to calculate 
+    fMRI RDMs.
+
+    Parameters
+    ----------
+    fmri_data : float array
+        fmri data array (conditions, trial repetitions, voxels)
+    pseudo_order : list of tuples
+        Array with pseudo order of trials (conditions)
+    data_split: str
+        Train or test. 
+    distance_type: str
+        Distance type: euclidean, pearson, euclidean-cv, classification or dv-classification
+    n_cpus: int
+        Number of cpus
+    shm_name: str
+        Name for shared memory
+
+
+    Returns
+    -------
+    list (restults): 
+        List of RDMs for all ROIs. 
+
+    """
 
     # Parallel calculating of RDMs for rois
     partial_compute_rdm = partial(compute_rdm,

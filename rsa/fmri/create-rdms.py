@@ -10,13 +10,14 @@ sub : int
 	Used subject.
 zscore : int
 	Whether to z-score [1] or not [0] the data.
-data_split : str
-	Whether to decode the 'testing' or 'training' split.
+data_split: str
+    Train or test. 
 distance_type: str
     Whether to base the RDMs on 'euclidean', 'euclidean-cv', 'classification' (a.k.a. decoding accuracy), or 'dv-classification' 
+rois: str
+    String with names of all ROIs to compute RDMs for.
 batch: int
-    Batch number (based on job array id) that determines which set of permutations will be executed. 
-    We will run 10 permutations --> 1 batch for every permutation
+    Batch number (based on job array id) that determines which set of pseudotrials will be used (relevevant for cv-measurements)
 """
 
 import os
