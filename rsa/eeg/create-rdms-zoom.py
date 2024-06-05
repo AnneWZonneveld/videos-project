@@ -1,5 +1,6 @@
 """
-Creating RDMs for EEG data based on data of specified subject.
+Creating zoomed in RDMs for EEG data based on data of specified subject --> 
+this means with higher resulting sampling frequency and only until 1s.
 
 How to run example: 
     sbatch --array=1-2 create-rdms.sh 
@@ -20,6 +21,7 @@ sfreq: int
     Sampling frequency. 
 
 """
+
 
 import os
 import pandas as pd
@@ -60,7 +62,7 @@ for key, val in vars(args).items():
 # Set random seed for reproducible results based on batch (a.k.a. permutation)
 seed = args.batch
 np.random.seed(seed)
-
+n_cpus = 2
 
 ################################### Load EEG data ######################################
 sub_format = format(args.sub, '02') 
@@ -70,7 +72,7 @@ if args.sfreq == 50:
     data_dir = f'/scratch/giffordale95/projects/eeg_videos/dataset/preprocessed_data/dataset_02/eeg/sub-{sub_format}/mvnn-time/baseline_correction-01/highpass-0.01_lowpass-100/sfreq-{sfreq_format}/preprocessed_data.npy'
 else:
     data_dir = f'/scratch/azonneveld/preprocessing/data/sub-{sub_format}/mvnn-time/baseline_correction-01/highpass-0.01_lowpass-100/sfreq-{sfreq_format}/preprocessed_data.npy'
-   
+    # data_dir = f'/scratch/azonneveld/preprocessing/sub-{sub_format}/mvnn-time/baseline_correction-01/highpass-0.01_lowpass-100/sfreq-0250/preprocessed_data.npy'
 
 data_dict = np.load(data_dir, allow_pickle=True).item()
 times = data_dict['times']
@@ -111,11 +113,15 @@ if args.sfreq != 50:
     if args.sfreq == 250:
         slide_size = 5
     elif args.sfreq == 500:
-        slide_size = 10
-
+        slide_size = 2 #925 timepoints --> each timepoint is 4 ms --> 1200 ms, means 300 timepoints --> higher sampling freq than non-zoom
+    
+    # Ends at 1 s
     new_n_times = int(len(times)/slide_size)
-    binned_eeg = np.zeros((eeg_data.shape[0], eeg_data.shape[1], new_n_times))
-    for i in range(new_n_times):
+    timepoint_dur = 3700/new_n_times
+    time_end = int(1200/timepoint_dur)
+
+    binned_eeg = np.zeros((eeg_data.shape[0], eeg_data.shape[1], time_end+1))
+    for i in range(time_end + 1):
         if i == 0:
             binned_eeg[:, :, i] = np.mean(eeg_data[:, :, 0:int(slide_size/2)], axis=2)
         elif i == (len(times)-1):
@@ -129,6 +135,8 @@ if args.sfreq != 50:
     for i in range(len(times)):
         if i % slide_size == 0:
             new_times.append(times[i])  
+        if i == slide_size * time_end:
+            break
     times = np.array(new_times)
 
     del binned_eeg
@@ -162,7 +170,7 @@ for v1 in range(n_conditions):
 
 # Parallel processing computing rdms
 print('Starting multiprocessing')
-results = compute_rdms_multi(eeg_data=eeg_data, pseudo_order=pseudo_order, ts=times, batch = args.batch, data_split=args.data_split, distance_type=args.distance_type, shm_name=f'{args.sub}_{args.sfreq}')
+results = compute_rdms_multi(eeg_data=eeg_data, pseudo_order=pseudo_order, ts=times, n_cpus=n_cpus, batch = args.batch, data_split=args.data_split, distance_type=args.distance_type, shm_name=f'{args.sub}_{args.sfreq}')
 print('Done multiprocessing')
 
 # Save 
@@ -179,11 +187,11 @@ results_dict = {
 	'info': info
 }
 
-res_folder = f'/scratch/azonneveld/rsa/eeg/rdms/{args.data_split}/z_{args.zscore}/sub-{sub_format}/{args.distance_type}/sfreq-{sfreq_format}/' 
+res_folder = f'/scratch/azonneveld/rsa/eeg/rdms/{args.data_split}/z_{args.zscore}/sub-{sub_format}/{args.distance_type}/sfreq-{sfreq_format}/zoom/' 
 if os.path.isdir(res_folder) == False:
 	os.makedirs(res_folder)
 
-file_path = res_folder + f'/{args.data_split}_{args.batch}_mp.pkl'
+file_path = res_folder + f'/{args.data_split}_{args.batch}_mp_zoom.pkl'
 
 # Save all model rdms
 with open(file_path, 'wb') as f:

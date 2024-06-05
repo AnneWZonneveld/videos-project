@@ -1,5 +1,7 @@
 """
-Creating RDMs for EEG data based on data of specified subject.
+Creating RDMs for EEG data based on different distance measurements.
+Reduce the amount of repetitions of the test set (to 6, same as train set) →
+randomly pick 6/24 repetitions per condition → make RDM → run cor/cis calculations  
 
 How to run example: 
     sbatch --array=1-2 create-rdms.sh 
@@ -10,16 +12,15 @@ sub : int
 	Used subject.
 zscore : int
 	Whether to z-score [1] or not [0] the data.
-data_split: str
-    Train or test. 
+data_split : str
+	Whether to decode the 'test' or 'train' split.
 distance_type: str
     Whether to base the RDMs on 'euclidean', 'euclidean-cv', 'classification' (a.k.a. decoding accuracy), or 'dv-classification' 
 batch: int
-    Batch number (based on job array id) that determines which set of pseudotrials will be used (relevevant for cv-measurements)
-sfreq: int
-    Sampling frequency. 
-
+    Batch number (based on job array id) that determines which set of permutations will be executed. 
+    We will run 10 permutations --> 1 batch for every permutation
 """
+
 
 import os
 import pandas as pd
@@ -34,7 +35,6 @@ from sklearn.preprocessing import StandardScaler
 from tqdm import tqdm
 from sklearn.svm import SVC
 import argparse
-import random
 import concurrent.futures
 from create_rdms_utils import compute_rdm
 from functools import partial
@@ -47,7 +47,7 @@ from compute_rdms_mp import compute_rdms_multi
 parser = argparse.ArgumentParser()
 parser.add_argument('--sub', default=1, type=int)
 parser.add_argument('--zscore', default=1, type=int)
-parser.add_argument('--data_split', default='train', type=str) 
+parser.add_argument('--data_split', default='test', type=str) 
 parser.add_argument('--distance_type', default='euclidean', type=str) 
 parser.add_argument('--batch', default=0, type=int) 
 parser.add_argument('--sfreq', default=500, type=int)
@@ -70,7 +70,7 @@ if args.sfreq == 50:
     data_dir = f'/scratch/giffordale95/projects/eeg_videos/dataset/preprocessed_data/dataset_02/eeg/sub-{sub_format}/mvnn-time/baseline_correction-01/highpass-0.01_lowpass-100/sfreq-{sfreq_format}/preprocessed_data.npy'
 else:
     data_dir = f'/scratch/azonneveld/preprocessing/data/sub-{sub_format}/mvnn-time/baseline_correction-01/highpass-0.01_lowpass-100/sfreq-{sfreq_format}/preprocessed_data.npy'
-   
+
 
 data_dict = np.load(data_dir, allow_pickle=True).item()
 times = data_dict['times']
@@ -149,7 +149,6 @@ n_combinations = squareform(rdms_array[:, :, 0]).shape[0]
 pseudo_order = np.zeros((n_combinations), dtype=object)
 del rdms_array
 
-random.seed(args.batch)
 combination = 0
 for v1 in range(n_conditions):
     for v2 in range(v1):
@@ -159,10 +158,9 @@ for v1 in range(n_conditions):
         pseudo_order[combination] = ordering
         combination = combination + 1
 
-
 # Parallel processing computing rdms
 print('Starting multiprocessing')
-results = compute_rdms_multi(eeg_data=eeg_data, pseudo_order=pseudo_order, ts=times, batch = args.batch, data_split=args.data_split, distance_type=args.distance_type, shm_name=f'{args.sub}_{args.sfreq}')
+results = compute_rdms_multi(eeg_data=eeg_data, pseudo_order=pseudo_order, ts=times, batch = args.batch, data_split=args.data_split, distance_type=args.distance_type, shm_name=f'{args.sub}_{args.sfreq}', resampled=True)
 print('Done multiprocessing')
 
 # Save 
@@ -179,7 +177,7 @@ results_dict = {
 	'info': info
 }
 
-res_folder = f'/scratch/azonneveld/rsa/eeg/rdms/{args.data_split}/z_{args.zscore}/sub-{sub_format}/{args.distance_type}/sfreq-{sfreq_format}/' 
+res_folder = f'/scratch/azonneveld/rsa/eeg/rdms/{args.data_split}/z_{args.zscore}/sub-{sub_format}/{args.distance_type}/sfreq-{sfreq_format}/resampled' 
 if os.path.isdir(res_folder) == False:
 	os.makedirs(res_folder)
 

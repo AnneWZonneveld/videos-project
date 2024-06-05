@@ -22,18 +22,46 @@ import concurrent.futures
 import time
 
 
-def compute_rdms_multi(eeg_data, pseudo_order, ts, batch, data_split='train', distance_type='euclidean', n_cpus=8):
+def compute_rdms_multi(eeg_data, pseudo_order, ts, batch, data_split='train', distance_type='euclidean', n_cpus=2, shm_name='', resampled=False):
+    """ Creates shared memory and sets up parallel computing (over time points) to calculate 
+    EEG RDMs.
+
+	Parameters
+	----------
+	eeg_data : float array
+		EEG data array (timepoints, channels, conditions)
+	pseudo_order : int array
+		Array with pseudo order of trials (timepoints, conditions)
+	ts : int
+		Number of timepoints
+	batch : int
+        Batch number
+	data_split: str
+        Train or test. 
+    distance_type: str
+        Distance type: euclidean, pearson, euclidean-cv, classification or dv-classification
+    n_cpus: int
+        Number of cpus
+    shm_name: str
+        Name for shared memory
+    resampled: bool
+        Concerning resampled test RDM y/n.  
+
+	Returns
+	-------
+	list (restults): 
+        List of RDMs for with length ts. 
+
+	"""
 
     # Allocating array
     if data_split=='train':
         n_conditions = 1000
     elif data_split=='test':
-        n_conditions == 102
+        n_conditions = 102
     
-    # rdms_array = np.zeros((n_conditions, n_conditions, eeg_data.shape[2]), dtype='float32')
-
     # Creating shared memory
-    shm_name = f'shared_data_permute_{batch}'
+    shm_name = f'{shm_name}_{data_split}_{distance_type}_shared_{batch}'
 
     try:
         shm = shared_memory.SharedMemory(create=True, size=eeg_data.nbytes, name=shm_name)
@@ -44,10 +72,10 @@ def compute_rdms_multi(eeg_data, pseudo_order, ts, batch, data_split='train', di
         shm = shared_memory.SharedMemory(create=True, size=eeg_data.nbytes, name=shm_name)
 
     # Create a np.recarray using the buffer of shm
-    shm_rdms_array = np.recarray(shape=eeg_data.shape, dtype=eeg_data.dtype, buf=shm.buf)
+    shm_rdms_array = np.ndarray(shape=eeg_data.shape, dtype=eeg_data.dtype, buffer=shm.buf)
 
     # Copy the data into the shared memory
-    np.copyto(shm_rdms_array, eeg_data)
+    shm_rdms_array[:] = eeg_data[:] 
 
     # Parallel calculating of RDMs for timepoints
     partial_compute_rdm = partial(compute_rdm,
@@ -55,14 +83,13 @@ def compute_rdms_multi(eeg_data, pseudo_order, ts, batch, data_split='train', di
                                 pseudo_order=pseudo_order,
                                 shm = shm_name,
                                 data_split=data_split,
-                                distance_type= distance_type)
+                                distance_type= distance_type,
+                                dtype=eeg_data.dtype,
+                                resampled=resampled)
 
     tic = time.time()
     ts = range(eeg_data.shape[2])
     pool = mp.Pool(n_cpus)
-    # with concurrent.futures.ProcessPoolExecutor(cpu_count()) as executor:
-    #     ts = range(eeg_data.shape[2])
-    #     results = executor.map(partial_compute_rdm, ts)
     results = pool.map(partial_compute_rdm, ts)
     pool.close()
     toc = time.time()
@@ -73,7 +100,4 @@ def compute_rdms_multi(eeg_data, pseudo_order, ts, batch, data_split='train', di
     print('permutation done in {:.4f} seconds'.format(toc-tic))
 
     return(list(results))
-
-
-
- 
+  
