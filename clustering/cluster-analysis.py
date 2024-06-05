@@ -1,3 +1,12 @@
+"""
+Explorative clustering analyis
+- comparing kmeans and hierarchical clustering
+
+Adjust functions in MAIN to needs.
+
+"""
+
+
 import os
 import pandas as pd
 import numpy as np
@@ -66,12 +75,33 @@ else:
 
 
 def ex_kmeans(fms, zet, var, n_clusters = 8, max_iter = 300, r_state = 0):
+    """
+    Perform kmeans
+    - fms: dict with embeddings
+    - zet: train/test (str)
+    - var: objects/scenes/actions (str)
+    - n_clusters: number of clusters (int)
+    - max_iter: number of iterations (int)
+    - r_state: random state (int)
+
+    """
+
     fm = fms[zet][var]
     kmeans = KMeans(n_clusters=n_clusters, max_iter=max_iter, random_state=r_state).fit(fm)
 
     return kmeans
 
-def ex_hierarch(fms, zet, var,  thres=None, n_clusters=None, linkage='ward'):
+def ex_hierarch(fms, zet, var, thres=None, n_clusters=None, linkage='ward'):
+    """
+    Perform kmeans
+    - fms: dict with embeddings
+    - zet: train/test (str)
+    - var: objects/scenes/actions (str)
+    - thres: if value, then threshold based (float)
+    - n_clusters: if value, then cluster based (int)
+    - linkage: ‘ward’, ‘complete’, ‘average’, ‘single’ (str)
+    """
+
     fm = fms[zet][var]
     agglo = AgglomerativeClusteringWithPredict(distance_threshold=thres, n_clusters=n_clusters, compute_full_tree=True, linkage=linkage, compute_distances=True).fit_predict(fm)
 
@@ -79,6 +109,19 @@ def ex_hierarch(fms, zet, var,  thres=None, n_clusters=None, linkage='ward'):
 
 
 def elbow_plot(fms, zet, var, clus_range = range(5, 10), its = 5, c_type='kmean', linkage='ward', cb=True):
+    """
+    Make an elbow plot
+    - fms: dict with embeddings
+    - zet: train/test (str)
+    - var: objects/scenes/actions (str)
+    - clus_range: range(int, int); 
+        if cb = False --> refers to threshold range
+        if cb = True --> refers to n of clusters ranges
+    - its: iterations per fit (int)
+    - c_type: 'kmean'/'hierarch'
+    - linkage: ‘ward’, ‘complete’, ‘average’, ‘single’ (str); only applicable for hierarch
+    - cb: cluster based (bool); only applicable for hierach
+    """
 
     if c_type == 'kmean':
         r_states = random.choices(range(1, 100), k=its)
@@ -133,17 +176,6 @@ def elbow_plot(fms, zet, var, clus_range = range(5, 10), its = 5, c_type='kmean'
         plt.savefig(img_path)
         plt.clf()
 
-        # # Centroid variability between iterations
-        # fig, ax = plt.subplots(1,1)
-        # sns.lineplot(clus_range, all_av_cors)
-        # ax.set_ylabel('Spearman-r cor between iterations')
-        # ax.set_xlabel('N of clusters')
-        # ax.set_title(f'K means {zet} {var}, its = {its}')
-        # fig.tight_layout()
-
-        # img_path = res_folder + f'/kmeans_cor_{zet}_{var}.png'
-        # plt.savefig(img_path)
-        # plt.clf()
 
     elif c_type == 'hierarch':
 
@@ -243,6 +275,15 @@ def elbow_plot(fms, zet, var, clus_range = range(5, 10), its = 5, c_type='kmean'
         pickle.dump(all_fits, f)
 
 def fits_variation_plot(zet, var, c_type, linkage, var_type='median'):
+    """
+    Plots the variation of cluster size for varying thresholds
+    - zet: train/test (str)
+    - var: objects/scenes/actions (str)
+    - c_type: 'kmean'/'hierarch'
+    - linkage: ‘ward’, ‘complete’, ‘average’, ‘single’ (str); only applicable for hierarch
+    - var_type: 'mean'/'median' (str)
+
+    """
 
     # Load all fits 
     if c_type == 'hierarch':
@@ -316,6 +357,17 @@ def fits_variation_plot(zet, var, c_type, linkage, var_type='median'):
 
 
 def visual_inspect(zet, var, mds=True, count=True, k='bf', ctype='kmean', linkage=''):
+    """
+    Make MDS plot / count plots based on clusters
+    - zet: train/test (str)
+    - var: objects/scenes/actions (str)
+    - mds: (bool); make mds plot
+    - count: (bool); make count plot
+    - k: 'bf' or (int); best fit or nr of clusters
+    - ctype: 'kmean'/'hierarch' (str)
+    - linkage: ‘ward’, ‘complete’, ‘average’, ‘single’ (str); only applicable for hierarch
+    """
+
 
     # Load fit
     if ctype == 'hierarch':
@@ -390,6 +442,14 @@ def sample_ks(zet, var, clus_range, ctype='kmean', linkage=''):
 
 
 def plot_dendogram(zet, var, linkage, p=100, k='bf', **kwargs):
+    """
+    Plot dendogram with cut off p
+    - zet: train/test (str)
+    - var: objects/scenes/actions (str)
+    - p: cut off value (nr of leaves) (int)
+    - k: 'bf' or (int); best fit or nr of clusters
+    - linkage: ‘ward’, ‘complete’, ‘average’, ‘single’ (str); only applicable for hierarch
+    """
 
     if k == 'bf':
         # Load best fit
@@ -418,7 +478,6 @@ def plot_dendogram(zet, var, linkage, p=100, k='bf', **kwargs):
 
     c, coph_dists = cophenet(linkage_matrix, pdist(fms[zet][var]))
 
-
     # Plot the corresponding dendrogram
     fig, ax = plt.subplots(1,1, dpi=300)
     dendrogram(linkage_matrix,     
@@ -438,6 +497,9 @@ def plot_dendogram(zet, var, linkage, p=100, k='bf', **kwargs):
 
 
 def load_FAISS(var):
+    """"
+    Loading FAISS for easy nearest neighbour. 
+    """
 
     print('Setting up FAISS')
 
@@ -465,11 +527,11 @@ def load_FAISS(var):
 def cluster_content(zet, var, FAISS, ctype='hierarch', linkage='ward', k=2, vid=True, pred=False):
     """
     Plots histogram of labels per cluster.
-    - zet: train/test
-    - var: objecst/actions/scenes
-    - ctype: hierarchical or kmean
-    - linkage: linkage type of hierarchical clustering fit (default = ward)
-    - k: nr of clusters
+    - zet: train/test (str)
+    - var: objecst/actions/scenes (str)
+    - ctype: hierarchical/kmean (str)
+    - linkage: ‘ward’, ‘complete’, ‘average’, ‘single’ (str); only applicable for hierarch
+    - k: nr of clusters (int)
     - vid: assesment based on clustering of derived labels of actual video dataset (True/False)
     - pred: assesment based on all available origignal labels (True/False)
     """
@@ -597,6 +659,15 @@ def cluster_content(zet, var, FAISS, ctype='hierarch', linkage='ward', k=2, vid=
 
 
 def dendogram_labels(zet, var, ctype='hierarch', linkage='ward', ks=50):
+    """
+    Plots histogram of labels per cluster cut off in the dendogram.
+    - zet: train/test (str)
+    - var: objecst/actions/scenes (str)
+    - ctype: hierarchical/kmean (str)
+    - linkage: ‘ward’, ‘complete’, ‘average’, ‘single’ (str); only applicable for hierarch
+    - ks: nr of clusters (int)
+    """
+
     FAISS = load_FAISS(var=var)
     
     if ctype == 'hierarch':
