@@ -20,13 +20,15 @@ import bokeh.plotting as bp
 from bokeh.models import HoverTool, BoxSelectTool, ColumnarDataSource, LinearColorMapper
 from bokeh.layouts import row, column, layout
 from sklearn.manifold import MDS
+from datasets import load_dataset, Dataset, DatasetDict
+import faiss
 
 
 # Pick 'ft' for default, 'cb_ft' for cbow, 'skip_ft' for skipgram
-model = 'ft'
+model = 'skip_ft'
 
-descript = False
-perform_MDS = True
+descript = True
+perform_MDS = False
 
 # Load word model: pretrained vs trained from scratch
 print('Loading word model')
@@ -130,7 +132,7 @@ if descript == True:
     # New in set is in wikipedia vocab + in labels of BOLD dataset
     # Out set is out of wikipedia vocab (but still in labels of BOLD dataset?)
     in_subset = ['jellyfish', 'limousine', 'orange', 'sunglasses', 'shipwreck', 'bar', 'aquarium', 'walking', 'studying', 'smoking']
-    out_subset = ['balance beam', 'zen garden', 'storage room', 'art school', 'ski slope', 'baseball player', 'hot pot', 'race car', 'playing music', 'coral reef'] 
+    out_subset = ['balance beam', 'zen garden', 'storage room', 'art school', 'ski slope', 'baseball player', 'hot pot', 'race car', 'playing+music', 'coral reef'] 
 
     # Check --> true
     in_checks = []
@@ -158,13 +160,55 @@ if descript == True:
     print(f"{model} out vocab neigh: ")
     print(f"{out_neighbours}")
 
-    print('Analogies')
-    a1 = ft.get_analogies("berlin", "germany", "france") #paris
-    a2 = ft.get_analogies("king", "prince", "queen")  # princess
-    a3 = ft.get_analogies("psx", "sony", "nintendo") # gamecube
-    a4 = ft.get_analogies("ronaldo", "soccer", "tennis") #djocovic
-    a5 = ft.get_analogies("italy", "spaghetti", "germany") #curry worst
-    print(a1)
-    print(a2)
-    print(a3)
-    print(a4)
+    # FAISS method
+    print('FAISS method')
+    with open(f'/scratch/azonneveld/meta-explore/{model}_wv_all.pkl', 'rb') as f:
+        wv_all = pickle.load(f)
+
+    unique_vocab = []
+    for zet in zets:
+        for var in vars:
+            c_dict = freq_data[zet][var]
+            labels = np.unique(c_dict['label']).tolist()
+            for label in labels:
+                if not label in unique_vocab:
+                    unique_vocab.append(label) 
+    
+    ds_dict = {'labels': unique_vocab}
+    ds = Dataset.from_dict(ds_dict)
+    embeddings_ds = ds.map(
+        lambda x: {"embeddings": wv_all[x['labels']]}
+    )
+    embeddings_ds.add_faiss_index(column='embeddings')
+    
+    in_neighbours = {}
+    out_neighbours = {}
+    for i in range(len(in_subset)):
+        in_word = in_subset[i]
+        in_word_emb = np.expand_dims(np.asarray(wv_all[in_word], dtype=np.float32), axis=0)       
+        scores, samples = embeddings_ds.get_nearest_examples("embeddings", in_word_emb, k=5)
+        samples = samples['labels']
+        in_res = (scores, samples)
+        in_neighbours[in_word] = in_res
+        out_word = out_subset[i]
+        out_word_emb = np.expand_dims(np.asarray(wv_all[out_word], dtype=np.float32), axis=0)                   
+        scores, samples = embeddings_ds.get_nearest_examples("embeddings", out_word_emb, k=5)
+        samples = samples['labels']
+        out_res = (scores, samples)
+        out_neighbours[out_word] = out_res
+    
+    print(f"{model} in vocab neigh: ")
+    print(f"{in_neighbours}")
+    print(f"{model} out vocab neigh: ")
+    print(f"{out_neighbours}")
+
+    # print('Analogies')
+    # a1 = ft.get_analogies("berlin", "germany", "france") #paris
+    # a2 = ft.get_analogies("king", "prince", "queen")  # princess
+    # a3 = ft.get_analogies("psx", "sony", "nintendo") # gamecube
+    # a4 = ft.get_analogies("ronaldo", "soccer", "tennis") #djocovic
+    # a5 = ft.get_analogies("italy", "spaghetti", "germany") #curry worst
+    # print(a1)
+    # print(a2)
+    # print(a3)
+    # print(a4)

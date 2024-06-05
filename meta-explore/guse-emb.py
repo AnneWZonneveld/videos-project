@@ -47,14 +47,17 @@ if perform_MDS == True:
     mds_plots = []
     wv_dict = {}
     wv_dict_all = {}
+    mds_dfs = {}
 
     for zet in zets:
 
         zet_dict = {}
+        zet_mds_dfs = {}
 
         for var in vars:
 
             var_dict = {}
+            var_mds_df = {}
 
             # Extract embeddings
             c_dict = freq_data[zet][var]
@@ -69,8 +72,6 @@ if perform_MDS == True:
                 embedding = embed([label]).numpy()[0]
                 wv[i] = embedding
 
-                # Reduce to 300 for fair comparison fasttext?
-
                 # Save all embeddings
                 wv_dict_all[label] = embedding
                 var_dict[label] = embedding
@@ -83,6 +84,7 @@ if perform_MDS == True:
             mds_df = pd.DataFrame(mds_ft, columns=['x', 'y'])
             mds_df['words'] = list(labels)
             mds_df['count'] = list(c_dict['count'])
+            zet_mds_dfs[var] = mds_df
 
             mds_plot = bp.figure(plot_width=500, plot_height=400, title=f"guse {zet} {var} labels",
             tools="pan,wheel_zoom,box_zoom,reset,hover",
@@ -96,6 +98,7 @@ if perform_MDS == True:
             mds_plots.append(mds_plot)
         
         wv_dict[zet] = zet_dict
+        mds_dfs[zet] = zet_mds_dfs
             
     # %% Save figure
     complete_fig = layout([[mds_plots[0], mds_plots[1], mds_plots[2]],
@@ -110,6 +113,10 @@ if perform_MDS == True:
             pickle.dump(wv_dict_all, f)
     with open(f'/scratch/azonneveld/meta-explore/guse_wv.pkl', 'wb') as f:
             pickle.dump(wv_dict, f)
+    
+    # Save MDS transformed data
+    with open(f'/scratch/azonneveld/meta-explore/guse_MDS_transform.pkl', 'wb') as f:
+            pickle.dump(mds_dfs, f)
 
 # Descriptives
 if descript == True:
