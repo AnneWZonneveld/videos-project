@@ -1,8 +1,10 @@
 """
 
-- Extract BERT embeddings
-- Perform MDS
-- Make bokeh plots
+- Extract GUSE embeddings
+- Performs MDS & create bokeh plots: 
+    - perform_MDS: True/False (bool)
+- Gives nearest neighbours of in/out vocab words
+    - descript: True/False (bool)
 
 
 """
@@ -23,6 +25,7 @@ from sklearn.manifold import MDS
 import re
 from datasets import load_dataset, Dataset, DatasetDict
 
+# Parameters
 descript = False
 perform_MDS = True
 
@@ -139,9 +142,6 @@ if descript == True:
     embeddings_ds.add_faiss_index(column='embeddings')
     
     # Get nearest neighbours for and out vocab
-    # in_subset = ['home', 'love', 'understand', 'books', 'watch', 'town', 'hockey', 'friend', 'pay', 'need']
-    # out_subset = ['balance beam', 'zen garden', 'storage room', 'art school', 'ski slope', 'baseball player', 'hot pot', 'race car', 'playing music', 'coral reef'] 
-
     in_subset = ['jellyfish', 'limousine', 'orange', 'sunglasses', 'shipwreck', 'bar', 'aquarium', 'walking', 'studying', 'smoking']
     out_subset = ['balance beam', 'zen garden', 'storage room', 'art school', 'ski slope', 'baseball player', 'hot pot', 'race car', 'playing+music', 'coral reef'] 
 

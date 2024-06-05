@@ -1,4 +1,9 @@
-""" File to explore meta data BOLD moments"""
+""" File to explore meta data BOLD moments
+
+Should be performed after feature extraction (using rsa/model/model-rmds.py) if looking at distribution for derived labels
+Gives overview of top-15 labels per visual event type (objects/scenes/actions) for train and test
+
+"""
 
 import os
 import pandas as pd
@@ -231,10 +236,10 @@ def freq_descript(freq_data, lab_type='og'):
 
 
 # ------------------ Load freq data en plots
-# zets_dict = load_freq_data(lab_type='og')
-# freq_descript(zets_dict, lab_type='og')
+zets_dict = load_freq_data(lab_type='og')
+freq_descript(zets_dict, lab_type='og')
 
-zets_dict = load_freq_data(lab_type='derived')
-freq_descript(zets_dict, lab_type='derived')
+# zets_dict = load_freq_data(lab_type='derived')
+# freq_descript(zets_dict, lab_type='derived')
 
 

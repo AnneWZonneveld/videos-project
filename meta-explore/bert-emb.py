@@ -1,8 +1,10 @@
 """
 
 - Extract BERT embeddings
-- Perform MDS
-- Make bokeh plots
+- Performs MDS & create bokeh plots: 
+    - perform_MDS: True/False (bool)
+- Gives nearest neighbours of in/out vocab words
+    - descript: True/False (bool)
 
 
 """
@@ -214,9 +216,6 @@ if descript == True:
     print('Done preprocessing corpus embeddings')
 
     # Get nearest neighbours for and out vocab
-    # in_subset = ['home', 'love', 'understand', 'books', 'watch', 'town', 'hockey', 'friend', 'pay', 'need']
-    # out_subset = ['balance beam', 'zen garden', 'storage room', 'art school', 'ski slope', 'baseball player', 'hot pot', 'race car', 'playing music', 'coral reef'] 
-
     in_subset = ['jellyfish', 'limousine', 'orange', 'sunglasses', 'shipwreck', 'bar', 'aquarium', 'walking', 'studying', 'smoking']
     out_subset = ['balance beam', 'zen garden', 'storage room', 'art school', 'ski slope', 'baseball player', 'hot pot', 'race car', 'playing+music', 'coral reef'] 
 

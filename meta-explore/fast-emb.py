@@ -1,8 +1,12 @@
 """
 
 - Extracts FastText embeddings
-- Performs MDS
-- Creates bokeh plots
+    - Pick which model: 'ft' for default, 'cb_ft' for cbow, 'skip_ft' for skipgram (str)
+- Performs MDS & create bokeh plots: 
+    - perform_MDS: True/False (bool)
+- Gives nearest neighbours of in/out vocab words
+    - descript: True/False (bool)
+
 
 """
 
@@ -23,10 +27,8 @@ from sklearn.manifold import MDS
 from datasets import load_dataset, Dataset, DatasetDict
 import faiss
 
-
-# Pick 'ft' for default, 'cb_ft' for cbow, 'skip_ft' for skipgram
-model = 'skip_ft'
-
+# Parameters 
+model = 'skip_ft' # Pick 'ft' for default, 'cb_ft' for cbow, 'skip_ft' for skipgram
 descript = True
 perform_MDS = False
 
@@ -52,7 +54,6 @@ with open('/scratch/azonneveld/meta-explore/freq_data.pkl', 'rb') as f:
     freq_data = pickle.load(f)
 
 # %% Get word vectors for labels
-
 zets = ['train', 'test']
 vars = ['objects', 'scenes', 'actions']
 
@@ -126,8 +127,6 @@ if perform_MDS == True:
 if descript == True:
     print(f'descriptives for {model}')
     vocab = ft.words
-    # in_subset = ['home', 'love', 'understand', 'books', 'watch', 'town', 'hockey', 'friend', 'pay', 'need']
-    # out_subset = ['balance beam', 'zen garden', 'storage room', 'art school', 'ski slope', 'baseball player', 'hot pot', 'race car', 'playing music', 'coral reef'] # actually check 
 
     # New in set is in wikipedia vocab + in labels of BOLD dataset
     # Out set is out of wikipedia vocab (but still in labels of BOLD dataset?)

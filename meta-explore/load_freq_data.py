@@ -1,6 +1,5 @@
 """ 
-File to for meta data BOLD moments:
-- Loads frequency data and saves
+- Creates frequency dataframe and saves
 - Create hist plots of labels
 
 Works with 'imaging_env'
