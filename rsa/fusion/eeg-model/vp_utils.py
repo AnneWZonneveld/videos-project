@@ -17,10 +17,30 @@ from multiprocessing import shared_memory
 
 
 def corr_nullDist(rdm_cor, rdm_1, rdm_2, its=100, eval_method='spearman'):
+    """ Calculates null distribution based on permutations for correlation calculation. 
+
+    Parameters
+    ----------
+    rdm_cor: float 
+        Found experimental correlation value
+    rdm_1 : float array
+        RDM 1 (= EEG RDM) (conditions, conditions)
+    rdm_2 : float array
+        RDM 2 (= model RDM) (conditions, conditions)
+    its: int
+        n of iterations used to compute significance
+    eval_method: str
+        Evaluation method to calculate similarity; 'spearman'/'pearson'
+
+    Returns
+    -------
+    p-val: float
+        P-value.
     """
-        Calculates null distribution based on permutations. 
-    """
+
     print("Constructing null distribution")
+
+    rdv_1 = squareform(rdm_1, checks=False)
 
     rdm_corr_null = []
     for i in range(its):
@@ -28,21 +48,18 @@ def corr_nullDist(rdm_cor, rdm_1, rdm_2, its=100, eval_method='spearman'):
         if i % 1000 == 0:
             print(f'null distr iteration: {i}')
 
-        # Create a random index that respects the structure of an rdm.
+        # Create a random index 
         random.seed(i)
-        shuffle = np.random.choice(rdm_1.shape[0], rdm_1.shape[0],replace=False)
+        shuffle = np.random.choice(rdv_1.shape[0], rdv_1.shape[0], replace=False)
 
         # shuffle RDM consistently for both dims
-        shuffled_rdm_1 = rdm_1[shuffle,:] # rows
-        shuffled_rdm_1 = shuffled_rdm_1[:,shuffle] # columns
+        shuffled_rdv_1 = rdv_1[shuffle] # rows
 
         # correlating with neural similarty matrix
         if eval_method == 'spearman':
-            rdm_corr_null.append(spearmanr(squareform(shuffled_rdm_1, checks=False), squareform(rdm_2, checks=False))[0])
+            rdm_corr_null.append(spearmanr(shuffled_rdv_1, squareform(rdm_2, checks=False))[0])
         elif eval_method == 'pearson':
-            rdm_corr_null.append(pearsonr(squareform(shuffled_rdm_1, checks=False), squareform(rdm_2, checks=False))[0])
-        elif eval_method == 'euclidean':
-            rdm_cor = np.linalg.norm(squareform(shuffled_rdm_1, checks=False) - squareform(rdm_2, checks=False))
+            rdm_corr_null.append(pearsonr(shuffled_rdv_1, squareform(rdm_2, checks=False))[0])
     
     # Calc p value
     rdm_corr_null = np.array(rdm_corr_null)
@@ -52,10 +69,28 @@ def corr_nullDist(rdm_cor, rdm_1, rdm_2, its=100, eval_method='spearman'):
 
 
 def corr_nullDist_rw(vp_scores, design_matrices, eeg_rdm, its=100):
+    """ Calculates null distribution based on permutations for variance partitioning. 
+
+    Parameters
+    ----------
+    vp_scores: dict of floats
+        Found experimental variance explained values.
+    design_matrice: float array
+        Combination of flattened model rdms of interest. 
+    eeg_rdm: float array
+        EEG rdm (conditions, conditions)
+    its: int
+        n of iterations used to compute significance
+
+    Returns
+    -------
+    p-val: float
+        P-value.
     """
-        Calculates null distribution based on permutations. 
-    """
+
     print("Constructing null distribution")
+
+    sq_eeg_rdm = squareform(eeg_rdm, checks=False)
     
     vp_perm_scores = {
             'u_a': [],
@@ -78,19 +113,16 @@ def corr_nullDist_rw(vp_scores, design_matrices, eeg_rdm, its=100):
 
         # Create a random index that respects the structure of an rdm.
         random.seed(i)
-        shuffle = np.random.choice(eeg_rdm.shape[0], eeg_rdm.shape[0],replace=False)
-
-        shuffled_eeg = eeg_rdm[shuffle, :] #rows
-        shuffled_eeg = shuffled_eeg[:, shuffle] #columns
-        sq_eeg_rdm = squareform(shuffled_eeg, checks=False)
+        shuffle = np.random.choice(sq_eeg_rdm.shape[0], sq_eeg_rdm.shape[0],replace=False)
+        shuffled_eeg = sq_eeg_rdm[shuffle]
         
         # Calc r2 for different models
         r2_scores = {}
         models = design_matrices.keys()
         for model in models:
             design_matrix = design_matrices[model]
-            model_fit = LinearRegression().fit(design_matrix, sq_eeg_rdm)
-            r2 = model_fit.score(design_matrix, sq_eeg_rdm)
+            model_fit = LinearRegression().fit(design_matrix, shuffled_eeg)
+            r2 = model_fit.score(design_matrix, shuffled_eeg)
             r2_scores[model] = r2*100
         
         # Perform variance partitioning 
@@ -141,6 +173,30 @@ def corr_nullDist_rw(vp_scores, design_matrices, eeg_rdm, its=100):
 
 
 def calc_rsquared(t, data_shape, dtype, feature_rdm, shm, its=10, eval_method='spearman'):
+    """ Calculates similarity between eeg rdm and model rdm at time point t. 
+
+    Parameters
+    ----------
+    t: int
+        Time point of interest
+    data_shape: shape
+        Data shape of EEG data
+    dtype: type
+        Data type of EEG data
+    feature_rdm: array of floats (conditions, conditions)
+        Model RDM
+    shm: str
+        Name of shared memory.
+    its: int
+        n of iterations used to compute significance
+    eval_emthod: str
+        Evulation method to calculate similarity; 'spearman'/'pearson'
+
+    Returns
+    -------
+    (rdm_cor, p-val): (float, float)
+        Correlation value, p-values
+    """
 
     print(f'Calculating r^2 t= {t}')
 
@@ -168,7 +224,31 @@ def calc_rsquared(t, data_shape, dtype, feature_rdm, shm, its=10, eval_method='s
     return (rdm_cor, rdm_cor_p)
 
 
-def cor_variability(t, data_shape, dtype, feature_rdm, shm, feature='objects', distance_type='pearson', data_split='train', its=100, eval_method='spearman'):
+def cor_variability(t, data_shape, dtype, feature_rdm, shm, its=100, eval_method='spearman'):
+    """ Calculates 95% confidence interval for similarity between eeg rdm and model rdm at time point t. 
+
+    Parameters
+    ----------
+    t: int
+        Time point of interest
+    data_shape: shape
+        Data shape of EEG data
+    dtype: type
+        Data type of EEG data
+    feature_rdm: array of floats (conditions, conditions)
+        Model RDM
+    shm: str
+        Name of shared memory.
+    its: int
+        n of iterations used to compute significance
+    eval_emthod: str
+        Evulation method to calculate similarity; 'spearman'/'pearson'
+
+    Returns
+    -------
+    (lower_p, upper_p): (float, float)
+        Lower percentile, upper percentile
+    """
 
     print(f'Calculating CI t= {t}')
 
@@ -208,39 +288,37 @@ def cor_variability(t, data_shape, dtype, feature_rdm, shm, feature='objects', d
     lower_p = np.percentile(rdm_corr_boots, 2.5)
     upper_p = np.percentile(rdm_corr_boots, 97.5)
 
-    # # Plot bootstrapped distribution
-    # cor = spearmanr(eeg_rdm_vec, feature_rdm_vec)[0]
-    # if t in [5, 20, 60, 100, 140]:
-    #     fig, axes = plt.subplots(dpi=300)
-    #     sns.displot(rdm_corr_boots, bins=50)
-    #     axes.set_title(f'Bootstrapped dist {distance_type}, t={t}')
-    #     axes.set_ylabel('Spearman')
-
-    #     fig = sns.displot(rdm_corr_boots, bins=50)
-    #     fig.set_axis_labels("Spearman")
-    #     plt.axvline(cor, color="red")
-
-    #     # Confidence inquantilervals:
-    #     plt.axvline(lower_p, color='gray', ls='--') # 2.5%
-    #     plt.axvline(upper_p, color='gray', ls='--')
-
-    #     fig.tight_layout()
-
-    #     res_folder  = f'/scratch/azonneveld/rsa/fusion/eeg-model/{data_split}/standard/plots/z_1/GA/model_euclidean/{distance_type}/sfreq_0500/spearman/'
-    #     if not os.path.exists(res_folder) == True:
-    #         os.makedirs(res_folder)
-
-    #     img_path = res_folder + f'boots_t{t}_{its}_{feature}.png'
-    #     plt.savefig(img_path)
-    #     plt.clf()
-
     toc = time.time()
     print(f'iteration {t} in {toc-tic}')
 
     return (lower_p, upper_p)
 
 
-def cor_variability_rw(t, data_shape, dtype, design_matrices, shm, its=100, eval_method='spearman'):
+def cor_variability_rw(t, data_shape, dtype, design_matrices, shm, its=100):
+    """ Calculates 95% confidence interval for similarity between eeg rdm and model rdm at time point t. 
+    
+    ---> unreliable results
+
+    Parameters
+    ----------
+    t: int
+        Time point of interest
+    data_shape: shape
+        Data shape of EEG data
+    dtype: type
+        Data type of EEG data
+    design_matrices: array of floats 
+        Combination of flattened model rdms of interest
+    shm: str
+        Name of shared memory.
+    its: int
+        n of iterations used to compute significance
+
+    Returns
+    -------
+    (lower_p, upper_p): (float, float)
+        Lower percentile, upper percentile
+    """
 
     print(f'Calculating CI t= {t}')
 
@@ -337,6 +415,32 @@ def cor_variability_rw(t, data_shape, dtype, design_matrices, shm, its=100, eval
 
 
 def calc_rsquared_rw(t, data_shape, dtype, design_matrix, shm, ridge, cv):
+    """ Calculates variance explained between eeg rdm and model rdm at time point t. 
+    
+    ---> Outdated
+
+    Parameters
+    ----------
+    t: int
+        Time point of interest
+    data_shape: shape
+        Data shape of EEG data
+    dtype: type
+        Data type of EEG data
+    design_matrix: array of floats
+       Combination of flattened model rdms of interest
+    shm: str
+        Name of shared memory.
+    ridge: int
+        To perform ridge regression y/n
+    cv: int
+        To perform cross validation y/n
+
+    Returns
+    -------
+    (r2, p-value): (float, float)
+        Variance explained, p-value.
+    """
 
     print(f'Calculating r^2 t= {t}')
 
@@ -385,6 +489,29 @@ def calc_rsquared_rw(t, data_shape, dtype, design_matrix, shm, ridge, cv):
 
 
 def calc_rsquared_rw_2(t, data_shape, dtype, design_matrices, its, shm):
+    """ Peforms variance partitioning between eeg rdm and models at time point t. 
+    
+    Parameters
+    ----------
+    t: int
+        Time point of interest
+    data_shape: shape
+        Data shape of EEG data
+    dtype: type
+        Data type of EEG data
+    design_matrices: array of floats
+       Combination of flattened model rdms of interest
+    its: int
+        n of iterations used to compute significance
+    shm: str
+        Name of shared memory.
+
+    Returns
+    -------
+    (lower_p, upper_p): (float, float)
+        Lower percentile, upper percentile
+    """
+
 
     print(f'Calculating r^2 t= {t}')
     tic = time.time()
