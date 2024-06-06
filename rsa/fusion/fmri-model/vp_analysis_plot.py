@@ -1,3 +1,20 @@
+"""
+Plot variance partioning results for model RDMs and fMRI RDM. 
+Group level. 
+
+Parameters
+----------
+data_split: str
+    Train or test. 
+alpha: float
+    Significance threshold.
+distance_type: str
+    Whether to use EEG RDMs based on 'euclidean', 'euclidean-cv', 'classification' (a.k.a. decoding accuracy), or 'dv-classification' 
+model_metric: str
+    Metric used in the model RDM; 'pearson'/'euclidean'
+"""
+
+
 import os
 import pandas as pd
 import numpy as np
@@ -14,9 +31,9 @@ from statsmodels.stats.multitest import fdrcorrection, multipletests
 
 # Take arguments
 parser = argparse.ArgumentParser()
-parser.add_argument('--data_split', default='training', type=str)
-parser.add_argument('--alpha', default=0.05, type=float)
-parser.add_argument('--distance_type', default='euclidean-cv', type=str)
+parser.add_argument('--data_split', default='train', type=str)
+parser.add_argument('--alpha', default=0.001, type=float)
+parser.add_argument('--distance_type', default='pearson', type=str)
 parser.add_argument('--model_metric', default='euclidean', type=str)
 
 args = parser.parse_args()
@@ -24,7 +41,6 @@ args = parser.parse_args()
 print('\nInput arguments:')
 for key, val in vars(args).items():
 	print('{:16} {}'.format(key, val))
-
 
 ####################### Load data #######################################
 data_folder = f'/scratch/azonneveld/rsa/fusion/fmri-model/vp-results/{args.data_split}/model_{args.model_metric}/{args.distance_type}/'
@@ -84,8 +100,7 @@ for model in models:
         elif model == 'all_parts':
             all_models.append('total')
 
-    # adj_ps_per_feat = fdrcorrection(ps_per_feat, alpha=0.05)[1]
-    adj_ps_per_model = multipletests(ps_per_model, alpha=0.05, method='bonferroni')[1]
+    adj_ps_per_model = multipletests(ps_per_model, alpha=args.alpha, method='bonferroni')[1]
     for i in adj_ps_per_model:
         adj_ps.append(i)
 
@@ -95,7 +110,7 @@ df['model'] = all_models
 df['roi'] = all_rois
 df['cor'] = all_cors
 df['ps'] = adj_ps
-df['sign'] = np.array(adj_ps) < 0.05 #one sided
+df['sign'] = np.array(adj_ps) < args.alpha #one sided
 df['cis_lower'] = all_cis_lower
 df['cis_upper'] = all_cis_upper
 
@@ -127,12 +142,12 @@ sns.set_style('white')
 sns.set_style("ticks")
 sns.set_context('paper', 
                 rc={'font.size': 14, 
-                    'xtick.labelsize': 10, 
-                    'ytick.labelsize':10, 
+                    'xtick.labelsize': 14, 
+                    'ytick.labelsize':14, 
                     'axes.titlesize' : 13,
                     'figure.titleweight': 'bold', 
-                    'axes.labelsize': 13, 
-                    'legend.fontsize': 8, 
+                    'axes.labelsize': 15, 
+                    'legend.fontsize': 12, 
                     'font.family': 'Arial',
                     'axes.spines.right' : False,
                     'axes.spines.top' : False})
@@ -142,8 +157,6 @@ sns.set_context('paper',
 colors = {'objects': 'blue', 'scenes': 'red', 'actions': 'green', 'total': 'lightgray'}
 
 fig, ax = plt.subplots(dpi=400, figsize=(12,6))
-# sns.barplot(data=df, x="roi", y="cor", hue="feature", palette=colors,
-#             yerr= np.vstack((np.array(df['cor'] - df['cis_lower']), np.array(df['cis_upper'] - df['cor']))))
 sns.barplot(data=unique_df, x="roi", y="cor", hue="model", palette=colors)
 
 all_patches = []
@@ -164,13 +177,11 @@ for i in range(unique_df['model'].nunique()):
 
         if sign == True: 
             ax.annotate('*', (p.get_x() + p.get_width() / 2., 0), ha='center', va='center', xytext=(0, -5), textcoords='offset points', fontsize=8)
-        ax.errorbar(x=(p.get_x() + p.get_width() / 2.), y=p.get_height(), yerr=np.array([cor - ci_low, ci_up - cor]).reshape(2, 1), ls='', lw=1, color='black')
 
         patch_count = patch_count + 1
 
 ax.set_title(f'fmri-model correlation')
 ax.set_xlabel('rois')
-# ax.set_ylabel(f'{args.eval_method}')
 ax.set_ylabel('Unique variance explained (%)')
 ax.legend(loc ='upper left', frameon=False, bbox_to_anchor=(1.04, 1))
 sns.despine(offset= 10, top=True, right=True)
@@ -200,17 +211,14 @@ for roi in sorted_rois:
 
 relative_df['relative cor'] = all_relative_values
     
-colors =  {'objects': 'royalblue', 'scenes': 'orangered', 'actions': 'limegreen'}
+colors = {'objects': 'blue', 'scenes': 'red', 'actions': 'green'}
 
 fig, ax = plt.subplots(dpi=400, figsize=(12,6))
-# sns.barplot(data=df, x="roi", y="cor", hue="feature", palette=colors,
-#             yerr= np.vstack((np.array(df['cor'] - df['cis_lower']), np.array(df['cis_upper'] - df['cor']))))
 sns.barplot(data=relative_df, x="roi", y="relative cor", hue="model", palette=colors)
 
 ax.set_title(f'fmri-model correlation')
 ax.set_xlabel('rois')
-# ax.set_ylabel(f'{args.eval_method}')
-ax.set_ylabel('Normalized unique variance explained (%)')
+ax.set_ylabel('Proportion variance explained (%)')
 ax.legend(loc ='upper left', frameon=False, bbox_to_anchor=(1.04, 1))
 sns.despine(offset= 10, top=True, right=True)
 plt.xticks(rotation=45)
@@ -223,11 +231,10 @@ print('Done relative plotting')
 
 
 # -------- Shared plot
-colors = {'o-a': 'darkslateblue', 'o-s': 'darkorchid', 's-a': 'darkmagenta', 'o-s-a': 'darkorange'}
+colors = {'o-a': 'darkslateblue', 'o-s': 'darkcyan', 's-a': 'darkorange', 'o-s-a': 'palevioletred'}
+
 
 fig, ax = plt.subplots(dpi=400, figsize=(12,6))
-# sns.barplot(data=df, x="roi", y="cor", hue="feature", palette=colors,
-#             yerr= np.vstack((np.array(df['cor'] - df['cis_lower']), np.array(df['cis_upper'] - df['cor']))))
 sns.barplot(data=shared_df, x="roi", y="cor", hue="model", palette=colors)
 
 all_patches = []
@@ -248,13 +255,11 @@ for i in range(shared_df['model'].nunique()):
 
         if sign == True: 
             ax.annotate('*', (p.get_x() + p.get_width() / 2., 0), ha='center', va='center', xytext=(0, -5), textcoords='offset points', fontsize=8)
-        ax.errorbar(x=(p.get_x() + p.get_width() / 2.), y=p.get_height(), yerr=np.array([cor - ci_low, ci_up - cor]).reshape(2, 1), ls='', lw=1, color='black')
 
         patch_count = patch_count + 1
 
 ax.set_title(f'fmri-model correlation')
 ax.set_xlabel('rois')
-# ax.set_ylabel(f'{args.eval_method}')
 ax.set_ylabel('Shared variance explained (%)')
 ax.legend(loc ='upper left', frameon=False, bbox_to_anchor=(1.04, 1))
 sns.despine(offset= 10, top=True, right=True)
@@ -283,17 +288,14 @@ for roi in sorted_rois:
 
 relative_s_df['relative cor'] = all_relative_values
     
-colors = {'o-a': 'darkslateblue', 'o-s': 'darkorchid', 's-a': 'darkmagenta', 'o-s-a': 'darkorange'}
+colors = {'o-a': 'darkslateblue', 'o-s': 'darkcyan', 's-a': 'darkorange', 'o-s-a': 'palevioletred'}
 
 fig, ax = plt.subplots(dpi=400, figsize=(12,6))
-# sns.barplot(data=df, x="roi", y="cor", hue="feature", palette=colors,
-#             yerr= np.vstack((np.array(df['cor'] - df['cis_lower']), np.array(df['cis_upper'] - df['cor']))))
 sns.barplot(data=relative_s_df, x="roi", y="relative cor", hue="model", palette=colors)
 
 ax.set_title(f'fmri-model correlation')
 ax.set_xlabel('rois')
-# ax.set_ylabel(f'{args.eval_method}')
-ax.set_ylabel('Normalized shared variance explained (%)')
+ax.set_ylabel('Proportion variance explained (%)')
 ax.legend(loc ='upper left', frameon=False, bbox_to_anchor=(1.04, 1))
 sns.despine(offset= 10, top=True, right=True)
 plt.xticks(rotation=45)
@@ -309,8 +311,6 @@ print('Done relative plotting')
 colors =  {'o total': 'royalblue', 's total': 'orangered', 'a total': 'limegreen', 'total' : 'lightgray'}
 
 fig, ax = plt.subplots(dpi=400, figsize=(12,6))
-# sns.barplot(data=df, x="roi", y="cor", hue="feature", palette=colors,
-#             yerr= np.vstack((np.array(df['cor'] - df['cis_lower']), np.array(df['cis_upper'] - df['cor']))))
 sns.barplot(data=total_df, x="roi", y="cor", hue="model", palette=colors)
 
 all_patches = []
@@ -331,13 +331,11 @@ for i in range(total_df['model'].nunique()):
 
         if sign == True: 
             ax.annotate('*', (p.get_x() + p.get_width() / 2., 0), ha='center', va='center', xytext=(0, -5), textcoords='offset points', fontsize=8)
-        ax.errorbar(x=(p.get_x() + p.get_width() / 2.), y=p.get_height(), yerr=np.array([cor - ci_low, ci_up - cor]).reshape(2, 1), ls='', lw=1, color='black')
 
         patch_count = patch_count + 1
 
 ax.set_title(f'fmri-model correlation')
 ax.set_xlabel('rois')
-# ax.set_ylabel(f'{args.eval_method}')
 ax.set_ylabel('Total variance explained (%)')
 ax.legend(loc ='upper left', frameon=False, bbox_to_anchor=(1.04, 1))
 sns.despine(offset= 10, top=True, right=True)

@@ -1,3 +1,29 @@
+"""
+Calculating the 95% confidence interval between specified model RDM and fMRI RDM on subject level
+
+Parameters
+----------
+sub: int
+    Subject nr
+feature: str
+    'Objects', 'scenes', 'actions' model.
+data_split: str
+    Train or test. 
+distance_type: str
+    Whether to use EEG RDMs based on 'euclidean', 'euclidean-cv', 'classification' (a.k.a. decoding accuracy), or 'dv-classification' 
+rois: str
+    String with all ROIs.
+eval_method: str
+    Method to compute similarity between RDMS; 'spearman' or 'pearson'
+jobarr_id: int
+    Unique jobarray id.
+model_metric: str
+    Metric used in the model RDM; 'pearson'/'euclidean'
+n_cpus: int
+    Number of cpus. 
+
+"""
+
 import os
 import pandas as pd
 import numpy as np
@@ -12,7 +38,6 @@ from scipy.stats import pearsonr, spearmanr
 import argparse
 from fmri_model_mp import *
 
-n_cpus = 8
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--sub', type=int)
@@ -22,6 +47,7 @@ parser.add_argument('--data_split', default='training', type=str)
 parser.add_argument('--rois', type=str)
 parser.add_argument('--eval_method', default='spearmean', type=str)
 parser.add_argument('--model_metric', default='euclidean', type=str)
+parser.add_argument('--n_cpus', default=1, type=int)
 args = parser.parse_args()
 
 print('\nInput arguments:')
@@ -46,7 +72,7 @@ fmri_rdms = data['results']
 ###################### Analysis ###################################################
 
 print("Start multiprocessing cis calc")
-results = calc_cis_mp(rois=rois, fmri_data=fmri_rdms, feature_rdm=model_rdm, its=1000, n_cpus=n_cpus, eval_method=args.eval_method)
+results = calc_cis_mp(rois=rois, fmri_data=fmri_rdms, feature_rdm=model_rdm, its=1000, n_cpus=args.n_cpus, eval_method=args.eval_method)
 print("Done multiprocessing")
 
 rois_dict = {}
@@ -64,7 +90,7 @@ results_dict = {
     'results': rois_dict
 }
 
-res_folder = f'/scratch/azonneveld/rsa/fusion/fmri-model/{args.data_split}/model_{args.model_metric}/sub-{sub_format}/{args.distance_type}/{args.eval_method}/'
+res_folder = f'/scratch/azonneveld/rsa/fusion/fmri-model/standard/{args.data_split}/model_{args.model_metric}/sub-{sub_format}/{args.distance_type}/{args.eval_method}/'
 if os.path.isdir(res_folder) == False:
 	os.makedirs(res_folder)
 res_file = res_folder + f'cis_{args.feature}.pkl'
