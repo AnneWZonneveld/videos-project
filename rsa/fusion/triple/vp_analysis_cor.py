@@ -1,3 +1,32 @@
+"""
+Calculating commonality score between specific model of interest and neural data.
+Group level.
+
+Parameters
+----------
+data_split: str
+    Train or test. 
+roi: str
+    Name ROI.
+eeg_distance_type: str
+    Whether to use EEG RDMs based on 'euclidean'/'pearson'
+fmri_distance_type: str
+    Whether to use fMRI RDMs based on 'euclidean'/'pearson'
+model_metric: str
+    Metric used in the model RDM; 'pearson'/'euclidean'
+eval_method: str
+    Method to compute similarity between RDMs; 'spearman' or 'pearson'
+feature_oi : str
+    'Objects', 'actions' or 'scenes'
+jobarr_id: int
+    Unique jobarray id.
+n_cpus: int
+    Number of cpus. 
+control: int
+    To perform control analysis y/n
+ 
+"""
+
 import os
 import pandas as pd
 import numpy as np
@@ -23,11 +52,12 @@ parser.add_argument('--data_split', default='training', type=str)
 parser.add_argument('--roi', type=str)
 parser.add_argument('--eeg_distance_type', default='euclidean-cv', type=str) 
 parser.add_argument('--fmri_distance_type', default='euclidean-cv', type=str) 
-parser.add_argument('--model_metric', default='correlation', type=str)
+parser.add_argument('--model_metric', default='euclidean', type=str)
 parser.add_argument('--eval_method', default='spearman', type=str)
 parser.add_argument('--feature_oi', type=str) 
 parser.add_argument('--jobarr_id', default=1, type=int) 
 parser.add_argument('--n_cpus', default=1, type=int) 
+parser.add_argument('--control', default=0, type=int) 
 args = parser.parse_args()
 
 print('\nInput arguments:')
@@ -63,8 +93,8 @@ eeg_rdms = eeg_data['rdms_array']
 
 ################################ Analysis #########################
 print('Starting multiprocessing reweighted R^2')
-shm_name = f'vp_{args.data_split}_{args.feature_oi}_{args.roi}'
-results = calc_common_mp(eeg_rdms=eeg_rdms, roi_rdm=roi_rdm, model_rdms=model_rdms, feature_oi=args.feature_oi, jobarr_id=args.jobarr_id, its=10000, n_cpus=args.n_cpus, shm_name=shm_name, method=args.eval_method)
+shm_name = f'vp_{args.data_split}_{args.feature_oi}_{args.roi}_{args.model_metric}'
+results = calc_common_mp(eeg_rdms=eeg_rdms, roi_rdm=roi_rdm, model_rdms=model_rdms, feature_oi=args.feature_oi, jobarr_id=args.jobarr_id, its=10000, n_cpus=args.n_cpus, shm_name=shm_name, method=args.eval_method, control=args.control)
 print('Done multiprocessing')
 
 ################################ Save #############################
@@ -85,12 +115,15 @@ results_dict = {
     'roi': args.roi,
     'eval_method': args.eval_method
 }
-
+ 
 res_folder = f'/scratch/azonneveld/rsa/fusion/triple/{args.data_split}/{args.roi}/{args.feature_oi}/fmri_{args.fmri_distance_type}/eeg_{args.eeg_distance_type}/'
 if os.path.isdir(res_folder) == False:
 	os.makedirs(res_folder)
 
-file_path = res_folder + f'vp_results_{args.eval_method}.pkl'
+if args.control == True:
+    file_path = res_folder + f'vp_results_{args.eval_method}_control.pkl'
+else:
+    file_path = res_folder + f'vp_results_{args.eval_method}.pkl'
 
 # Save all model rdms
 with open(file_path, 'wb') as f:

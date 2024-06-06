@@ -21,10 +21,42 @@ import concurrent.futures
 import time
 from vp_utils import *
 
-def calc_common_mp(eeg_rdms, roi_rdm, model_rdms, feature_oi, jobarr_id, its=10, n_cpus=2, shm_name='', method='spearman'):
+def calc_common_mp(eeg_rdms, roi_rdm, model_rdms, feature_oi, jobarr_id, its=10, n_cpus=2, shm_name='', method='spearman', control=False):
+    """ Creates shared memory and sets up parallel computing (over different time points) to calculate commonality score
+    EEG, fMRI and model RDMS.
+
+    Parameters
+    ----------
+    eeg_rdms: float array
+        eeg data array (time points, conditions, conditions)
+    roi_rdm : float array
+        fmri data array (conditions, conditions)
+    model_rdms: dictionary of arrays
+        Dictionary with model RDMs.
+    feature_oi: str
+        'objects', 'scenes', 'actions'
+    jobarr_id: int
+        unique job id
+    its: int
+        n of iterations used to compute significance
+    n_cpus: int
+        Number of cpus
+    shm_name: str
+        Name for shared memory
+    method: str
+        Method used to calculate commonality between RDMs; 'spearman' or 'pearson'
+    control: int
+        Whether use control method y/n
+
+    Returns
+    -------
+    list (restults): 
+        List of commonality results.
+
+    """
 
     # Creating shared memory
-    shm_name = f'shared_data_cors_{shm_name}{jobarr_id}'
+    shm_name = f'shared_data_cors_{shm_name}{jobarr_id}_n'
 
     try:
         shm = shared_memory.SharedMemory(create=True, size=eeg_rdms.nbytes, name=shm_name)
@@ -49,7 +81,8 @@ def calc_common_mp(eeg_rdms, roi_rdm, model_rdms, feature_oi, jobarr_id, its=10,
                                     roi_rdm = roi_rdm,
                                     shm = shm_name,
                                     method = method,
-                                    its=its)
+                                    its=its,
+                                    control=control)
 
 
     tic = time.time()
@@ -70,9 +103,43 @@ def calc_common_mp(eeg_rdms, roi_rdm, model_rdms, feature_oi, jobarr_id, its=10,
 
 
 def calc_common_cis_mp(eeg_rdms, roi_rdm, model_rdms, feature_oi, jobarr_id, its=10, n_cpus=2, shm_name='', method='spearman'):
+    """ Creates shared memory and sets up parallel computing (over different time points) to calculate 95 % confidence commonality score
+    EEG, fMRI and model RDMS.
+
+    ---> unreliable results
+
+    Parameters
+    ----------
+    eeg_rdms: float array
+        eeg data array (time points, conditions, conditions)
+    roi_rdm : float array
+        fmri data array (conditions, conditions)
+    model_rdms: dictionary of arrays
+        Dictionary with model RDMs.
+    feature_oi: str
+        'objects', 'scenes', 'actions'
+    jobarr_id: int
+        unique job id
+    its: int
+        n of iterations used to compute significance
+    n_cpus: int
+        Number of cpus
+    shm_name: str
+        Name for shared memory
+    method: str
+        Method used to calculate commonality between RDMs; 'spearman' or 'pearson'
+    control: int
+        Whether use control method y/n
+
+    Returns
+    -------
+    list (restults): 
+        List of commonality results.
+
+    """
 
     # Creating shared memory
-    shm_name = f'shared_data_cis_{shm_name}{jobarr_id}'
+    shm_name = f'shared_data_cis_{shm_name}{jobarr_id}_n'
 
     try:
         shm = shared_memory.SharedMemory(create=True, size=eeg_rdms.nbytes, name=shm_name)

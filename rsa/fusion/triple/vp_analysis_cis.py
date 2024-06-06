@@ -1,3 +1,32 @@
+"""
+Calculating 95% confidence interval of commonality score between specific model of interest and neural data.
+Group level.
+
+--> unreliable results
+
+Parameters
+----------
+data_split: str
+    Train or test. 
+roi: str
+    Name ROI.
+eeg_distance_type: str
+    Whether to use EEG RDMs based on 'euclidean'/'pearson'
+fmri_distance_type: str
+    Whether to use fMRI RDMs based on 'euclidean'/'pearson'
+model_metric: str
+    Metric used in the model RDM; 'pearson'/'euclidean'
+eval_method: str
+    Method to compute similarity between RDMS; 'spearman' or 'pearson'
+feature_oi : str
+    'Objects', 'actions' or 'scenes'
+jobarr_id: int
+    Unique jobarray id.
+n_cpus: int
+    Number of cpus. 
+ 
+"""
+
 import os
 import pandas as pd
 import numpy as np
@@ -23,7 +52,7 @@ parser.add_argument('--data_split', default='training', type=str)
 parser.add_argument('--roi', type=str)
 parser.add_argument('--eeg_distance_type', default='euclidean-cv', type=str) 
 parser.add_argument('--fmri_distance_type', default='euclidean-cv', type=str) 
-parser.add_argument('--model_metric', default='correlation', type=str)
+parser.add_argument('--model_metric', default='euclidean', type=str)
 parser.add_argument('--eval_method', default='spearman', type=str)
 parser.add_argument('--feature_oi', type=str) 
 parser.add_argument('--jobarr_id', default=1, type=int) 
