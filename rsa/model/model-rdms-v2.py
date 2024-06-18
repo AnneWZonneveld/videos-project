@@ -1,3 +1,10 @@
+"""
+
+Final code used to compute the n video x n video RDMs that are used for furhter analyses.
+Additional exploration of average vs most frequent label based RDMs.
+
+"""
+
 import os
 import pandas as pd
 import numpy as np
@@ -15,8 +22,8 @@ from natsort import index_natsorted
 from scipy.stats import pearsonr, spearmanr
 from statsmodels.stats.multitest import multipletests
 from model_rdm_utils import load_glob_md_v2, corr_nullDist
-from tqdm import tqdm
 import random 
+from matplotlib.colors import LogNorm 
 
 file_path = '/scratch/azonneveld/downloads/annotations_humanScenesObjects.json'
 md = pd.read_json(file_path).transpose()
@@ -24,11 +31,18 @@ md = pd.read_json(file_path).transpose()
 zets = ['train', 'test']
 vars = ['objects', 'scenes', 'actions']
 metric='euclidean'
-res_folder = '/scratch/azonneveld/rsa/model/plots/rdm_t2/' 
+res_folder = f'/scratch/azonneveld/rsa/model/plots/rdm_t2/' 
 
 
 # # ------------------- RDM type 2: per video 
 def global_emb(emb_type='avg'):
+    """
+    Compute the global embeddings for all videos 
+
+    Emb_type: str
+        'avg' or 'freq'
+    
+    """
 
     print(f'Calcualting global {emb_type} embedding')
          
@@ -128,9 +142,16 @@ def global_emb(emb_type='avg'):
             
 
 
-def calc_t2_rdms(emb_type='avg', sort=False): 
+def calc_t2_rdms(emb_type='avg', sort=False, metric='euclidean'): 
     """
-    Emb_type: 'avg' or 'freq'
+    Compute n videos x n videos RDMs for different visual event components.
+    
+    Emb_type: str
+        'avg' or 'freq'
+    Sort: bool
+        Calculate sorted vs non-sorted RDM
+    Metric: str
+        'euclidean' or (1- pearson)'correlation'
 
     """
 
@@ -170,7 +191,7 @@ def calc_t2_rdms(emb_type='avg', sort=False):
             for k in range(n_stimuli):
                 f_matrix[k, :] = zet_md[var_emb].iloc[k]
 
-            rdm = pairwise_distances(f_matrix, metric=metric)
+            rdm = pairwise_distances(f_matrix, metric=metric) ** 2 #should be squared? bc cv euclidean rdm is also squared
             rdm_vars[var] = rdm
 
         rdm_zets[zet] = rdm_vars
@@ -180,14 +201,42 @@ def calc_t2_rdms(emb_type='avg', sort=False):
         sort_label = '_sorted'
     else:
         sort_label = ''
+    
+    folder = f'/scratch/azonneveld/rsa/model/rdms/t2/{metric}/'
+    if os.path.isdir(folder) == False:
+        os.makedirs(folder)
 
-    with open(f'/scratch/azonneveld/rsa/model/rdms/t2/rdm_t2_{emb_type}{sort_label}.pkl', 'wb') as f:
+    file = folder + f'rdm_t2_{emb_type}{sort_label}.pkl'
+    with open(file, 'wb') as f:
         pickle.dump(rdm_zets, f)
 
     
 def plot_t2_rdms(emb_type='avg', sort=False):
+    """
+    Plot n videos x n videos RDMs
+
+    Emb_type: str
+        'avg' or 'freq'
+    Sort: bool
+        Calculate sorted vs non-sorted RDM
+
+    """   
 
     print(f"Plotting t2 rdms {emb_type}")
+    sns.set_style('white')
+    sns.set_style("ticks")
+    sns.set_context('paper', 
+                    rc={'font.size': 14, 
+                        'xtick.labelsize': 10, 
+                        'ytick.labelsize':10, 
+                        'axes.titlesize' : 13,
+                        'figure.titleweight': 'bold', 
+                        'axes.labelsize': 13, 
+                        'legend.fontsize': 8, 
+                        'font.family': 'Arial',
+                        'axes.spines.right' : False,
+                        'axes.spines.top' : False})
+    sns.set_palette('viridis')
 
     # Load rdms
     if sort == True:
@@ -195,7 +244,7 @@ def plot_t2_rdms(emb_type='avg', sort=False):
     else:
         sort_label = ''
  
-    with open(f'/scratch/azonneveld/rsa/model/rdms/t2/rdm_t2_{emb_type}{sort_label}.pkl', 'rb') as f: 
+    with open(f'/scratch/azonneveld/rsa/model/rdms/t2/{metric}/rdm_t2_{emb_type}{sort_label}.pkl', 'rb') as f: 
         rdms = pickle.load(f)
 
     # Get max and min of all rdms 
@@ -215,8 +264,8 @@ def plot_t2_rdms(emb_type='avg', sort=False):
     max_min_dict['min'] = min
 
     # Create plots
-    fig, ax = plt.subplots(2,3, dpi = 500)
-    fig.suptitle(f'Type 2 GUSE RDMs {emb_type}, {sort_label}', size=8)
+    fig, ax = plt.subplots(2,3, dpi = 700)
+    fig.suptitle(f'Semantic model RDMs')
 
     for j in range(len(zets)):
         zet = zets[j]
@@ -227,22 +276,112 @@ def plot_t2_rdms(emb_type='avg', sort=False):
             rdm = rdms[zet][var]
 
             im = ax[j, i].imshow(rdm, vmin=0, vmax=max)
-            ax[j, i].set_title(f'{zet} {var}', fontsize=8)
+            ax[j, i].set_title(f'{var}')
             ax[j, i].set_xlabel("", fontsize=10)
-            ax[j, i].set_ylabel("", fontsize=10)
+            ax[j, i].set_xticks([])
+            ax[j, i].set_yticks([])
+            if i in [0, 4]:
+                if j == 0:
+                    ax[j, i].set_ylabel("Train")
+                else:
+                    ax[j, i].set_ylabel("Test")
+            else:
+                ax[j, i].set_ylabel("", fontsize=10)
+            sns.despine()
 
     fig.tight_layout()
-    cbar = fig.colorbar(im, ax=ax.ravel().tolist())
-    cbar.ax.set_ylabel(f'{metric} distance', fontsize=12)
+    cbar = fig.colorbar(im, ax=ax.ravel().tolist(), shrink=0.8)
+    cbar.ax.set_ylabel(f'{metric} distance')
 
     img_path = res_folder + f'rdm_t2_{emb_type}{sort_label}.png'
     plt.savefig(img_path)
     plt.clf()
 
 
+def plot_t2_rdms_rank(emb_type='avg', sort=False):
+    """
+    Plot rank-normalized n videos x n videos RDMs.
+
+    Emb_type: str
+        'avg' or 'freq'
+    Sort: bool
+        Calculate sorted vs non-sorted RDM
+
+    """   
+
+    print(f"Plotting t2 rdms {emb_type}")
+    sns.set_style('white')
+    sns.set_style("ticks")
+    sns.set_context('paper', 
+                    rc={'font.size': 14, 
+                        'xtick.labelsize': 10, 
+                        'ytick.labelsize':10, 
+                        'axes.titlesize' : 13,
+                        'figure.titleweight': 'bold', 
+                        'axes.labelsize': 13, 
+                        'legend.fontsize': 8, 
+                        'font.family': 'Arial',
+                        'axes.spines.right' : False,
+                        'axes.spines.top' : False})
+    sns.set_palette('viridis')
+
+    # Load rdms
+    if sort == True:
+        sort_label = '_sorted'
+    else:
+        sort_label = ''
+ 
+    with open(f'/scratch/azonneveld/rsa/model/rdms/t2/{metric}/rdm_t2_{emb_type}{sort_label}.pkl', 'rb') as f: 
+        rdms = pickle.load(f)
+
+    # Create plots
+    fig, ax = plt.subplots(2,3, dpi = 700)
+    fig.suptitle(f'Semantic model RDMs')
+
+    for j in range(len(zets)):
+        zet = zets[j]
+
+        for i in range(len(vars)):
+            var = vars[i]
+
+            rdm = rdms[zet][var]
+            
+            max_value = np.max(rdm)
+            normalized_rdm = (rdm / max_value) * 100
+
+            im = ax[j, i].imshow(normalized_rdm, vmin=0, vmax=100, cmap='viridis')
+            ax[j, i].set_title(f'{var}')
+            ax[j, i].set_xlabel("", fontsize=10)
+            ax[j, i].set_xticks([])
+            ax[j, i].set_yticks([])
+            if i in [0, 4]:
+                if j == 0:
+                    ax[j, i].set_ylabel("Train")
+                else:
+                    ax[j, i].set_ylabel("Test")
+            else:
+                ax[j, i].set_ylabel("", fontsize=10)
+
+            ax[j, i].spines['top'].set_visible(False)
+            ax[j, i].spines['bottom'].set_visible(False)
+            ax[j, i].spines['right'].set_visible(False)
+            ax[j, i].spines['left'].set_visible(False)
+
+    fig.tight_layout()
+    cbar = fig.colorbar(im, ax=ax.ravel().tolist(), shrink=0.9)
+    cbar.ax.set_ylabel('Normalized Dissimilarity (%)')
+
+    img_path = res_folder + f'rdm_t2_{emb_type}_norm{sort_label}.png'
+    plt.savefig(img_path)
+    plt.clf()
+
+
+
 def rdm_t2_emb_type_sim():
     """
         Check if rdms for different emb_types are similar.
+        For avg embedding based RDM, most frequent embedding based RDM 
+        and permuted frequency based RDM.
     """
 
     # Load data 
@@ -256,9 +395,10 @@ def rdm_t2_emb_type_sim():
     var_dict = {}
     for var in vars:
 
-
         with open(f'/scratch/azonneveld/rsa/model/rdms/t2/rdm_t2_GA_{var}.pkl', 'rb') as f: 
             permuted_rdm = pickle.load(f)
+        
+        permuted_rdm = permuted_rdm['GA_rdm']
         
         var_dict[var] = permuted_rdm
 
@@ -290,15 +430,8 @@ def rdm_t2_emb_type_sim():
         # Correlate RDMs for different vars
         for var in vars:
 
-            if method_1 == 'perm_freq':
-                rdm_m1 = rdms_m1['train'][var]['GA_rdm']
-                rdm_m2 = rdms_m2['train'][var]
-            elif method_2 == 'perm_freq':
-                rdm_m1 = rdms_m1['train'][var]
-                rdm_m2 = rdms_m2['train'][var]['GA_rdm']
-            else:
-                rdm_m1 = rdms_m1['train'][var]
-                rdm_m2 = rdms_m2['train'][var]
+            rdm_m1 = rdms_m1['train'][var]
+            rdm_m2 = rdms_m2['train'][var]
 
             cor = spearmanr(squareform(rdm_m1, checks=False), squareform(rdm_m2, checks=False))
 
@@ -306,20 +439,40 @@ def rdm_t2_emb_type_sim():
 
 
 
-def rdm_t2_space_sim(emb_type='avg', its=100, test=False):
+def rdm_t2_space_sim(emb_type='avg', its=10000, test=False, data_split='test'):
     """
     Correlate object/scene/action space with videoxvideo RDM for GUSE model. 
 
+    emb_type: str
+        'avg' / 'freq' / 'perm_freq'
+    its: int
+        N of iterations used for calcualtion of significance
+    test: bool
+        Whether to calculate significance y/n
+    data_split: str
+        'train' / 'test'
     """
-    
-    with open(f'/scratch/azonneveld/rsa/model/rdms/t2/rdm_t2_{emb_type}.pkl', 'rb') as f: 
-            rdms = pickle.load(f)
-    
-    fig, ax = plt.subplots(1, 2, dpi = 300)
-    fig.suptitle(f'Pairwise correlation Type 2 RDMs, emb_typ={emb_type}')
 
-    for j in range(len(zets)):
-        zet = zets[j]
+    if emb_type =='perm_freq':
+        
+        permuted_rdms = {}
+        var_dict = {}
+        for var in vars:
+
+            with open(f'/scratch/azonneveld/rsa/model/rdms/t2/{metric}/rdm_t2_GA_{var}.pkl', 'rb') as f: 
+                permuted_rdm = pickle.load(f)
+            
+            permuted_rdm = permuted_rdm['GA_rdm']
+            
+            var_dict[var] = permuted_rdm
+
+        permuted_rdms[data_split] = var_dict
+        rdms = permuted_rdms
+       
+        fig, ax = plt.subplots(dpi=300)
+        fig.suptitle(f'Pairwise correlation Type 2 RDMs, emb_typ={emb_type}')
+
+        zet = data_split
         df = pd.DataFrame()
 
         for i in range(len(vars)):
@@ -327,68 +480,140 @@ def rdm_t2_space_sim(emb_type='avg', its=100, test=False):
             rdm = squareform(rdms[zet][var].round(5))
             df[var] = rdm
 
-        im = ax[j].imshow(df.corr(method='spearman'), vmax=1)
-        ax[j].set_xticks([0,1,2]) 
-        ax[j].set_xticklabels(vars, fontsize=5)
-        ax[j].set_yticks([0,1,2]) 
-        ax[j].set_yticklabels(vars, fontsize=5)
-        ax[j].set_title(f'{zet}', fontsize=7)
+        im = ax.imshow(df.corr(method='spearman'), vmax=1)
+        ax.set_xticks([0,1,2]) 
+        ax.set_xticklabels(vars, fontsize=10)
+        ax.set_yticks([0,1,2]) 
+        ax.set_yticklabels(vars, fontsize=10)
+        ax.set_title(f'{zet}', fontsize=7)
 
+        fig.tight_layout()
+        cbar = fig.colorbar(im, ax=ax)
+        cbar.ax.set_ylabel(f'Spearman correlation', fontsize=12)
 
-    fig.tight_layout()
-    cbar = fig.colorbar(im, ax=ax.ravel().tolist())
-    cbar.ax.set_ylabel(f'Spearman correlation', fontsize=12)
+        img_path = res_folder + f'rdm_t2_label_cor_{emb_type}_{data_split}.png'
+        plt.savefig(img_path)
+        plt.clf()
+    
+    else: 
 
-    img_path = res_folder + f'rdm_t2_label_cor_{emb_type}.png'
-    plt.savefig(img_path)
-    plt.clf()
+        with open(f'/scratch/azonneveld/rsa/model/rdms/t2/{metric}/rdm_t2_{emb_type}.pkl', 'rb') as f: 
+                rdms = pickle.load(f)
+
+        # Calc vmin
+        vmin_values = []  
+        for j in range(len(zets)):
+            zet = zets[j]
+            df = pd.DataFrame()
+
+            for i in range(len(vars)):
+                var = vars[i]
+                rdm = squareform(rdms[zet][var].round(5))
+                df[var] = rdm
+
+            # Calculate the minimum correlation value
+            vmin_values.append(df.corr(method='spearman').values.min())
+
+        # Use the minimum value as vmin for all subplots
+        vmin = min(vmin_values)
+
+        fig, ax = plt.subplots(1, 2, dpi = 300)
+        fig.suptitle(f'Pairwise correlations semantic RDMs')
+
+        for j in range(len(zets)):
+            zet = zets[j]
+            df = pd.DataFrame()
+
+            for i in range(len(vars)):
+                var = vars[i]
+                rdm = squareform(rdms[zet][var].round(5))
+                df[var] = rdm
+            
+            corr_matrix = df.corr(method='spearman').values
+            corr_matrix_tril = np.tril(corr_matrix)  # Get lower triangle
+
+            im = ax[j].imshow(corr_matrix_tril, norm=LogNorm(vmin=vmin, vmax=1), cmap='viridis')
+
+            # Annotate the heatmap with actual correlation values
+            for i in range(len(vars)):
+                for k in range(len(vars)):
+                    text = f"{corr_matrix[i, k]:.3f}"
+                    ax[j].text(k, i, text, ha='center', va='center', color='white' if corr_matrix[i, k] < 0.5 else 'black', fontsize=8)
+
+            ax[j].set_xticks([0,1,2]) 
+            ax[j].set_xticklabels(vars)
+            ax[j].set_yticks([0,1,2]) 
+            ax[j].set_yticklabels(vars)
+            ax[j].set_title(f'{zet}')
+
+            ax[j].spines['top'].set_visible(False)
+            ax[j].spines['bottom'].set_visible(False)
+            ax[j].spines['right'].set_visible(False)
+            ax[j].spines['left'].set_visible(False)
+
+        
+        fig.tight_layout()
+        fig.subplots_adjust(wspace=0.5)
+        cbar = fig.colorbar(im, ax=ax.ravel().tolist(), shrink=0.6)
+        cbar.ax.set_ylabel(f'Log-norm Spearman correlation')
+
+        img_path = res_folder + f'rdm_t2_label_cor_{emb_type}.png'
+        plt.savefig(img_path)
+        plt.clf()
+
 
     if test == True:
         # Permutation tests
-        fig, ax = plt.subplots(1, 3, dpi = 300)
-        fig.suptitle(f'Permutation test: its={its}, emb_type={emb_type}')
-        for i in range(len(vars)):
-            var_1 = vars[i]
+        for zet in zets:
+            for i in range(len(vars)):
+                fig, ax = plt.subplots(dpi = 300)
+                fig.suptitle(f'Permutation test: its={its}, emb_type={emb_type}')
 
-            if i == len(vars) - 1:
-                var_2 = vars[0]
-            else:
-                var_2 = vars[i+1]
+                var_1 = vars[i]
+
+                if i == len(vars) - 1:
+                    var_2 = vars[0]
+                else:
+                    var_2 = vars[i+1]
+                
+                print(f'{var_1} x {var_2}')
+
+                rdm_1 = rdms[zet][var_1]
+                rdm_2 = rdms[zet][var_2]
+                rdm_cor = spearmanr(squareform(rdm_1, checks=False), squareform(rdm_2, checks=False))[0]
+                rdm_corr_null = corr_nullDist(rdm_1, rdm_2, iterations=its)
+                p_val = np.mean(rdm_corr_null>rdm_cor) 
+                print(f'cor: {rdm_cor}')
+                print(f'p val: {p_val}')
+                print(f'p val corrected: {p_val/3}')
+
+                fig, ax = plt.subplots()
+                sns.histplot(np.array(rdm_corr_null))
+                ax.set_xlabel("Cor")
+                ax.set_title(f"{var_1} x {var_2}, its={its}")
+                ax.axvline(rdm_cor, color="red")
             
-            print(f'{var_1} x {var_2}')
-
-            rdm_1 = rdms['train'][var_1]
-            rdm_2 = rdms['train'][var_2]
-            rdm_cor = pearsonr(squareform(rdm_1, checks=False), squareform(rdm_2, checks=False))[0]
-            rdm_corr_null = corr_nullDist(rdm_1, rdm_2, iterations=its)
-            p_val = np.mean(rdm_corr_null>rdm_cor) 
-            print(f'cor: {rdm_cor}')
-            print(f'p val: {p_val}')
-
-            fig, ax = plt.subplots()
-            sns.histplot(np.array(rdm_corr_null))
-            ax.set_xlabel("Cor")
-            ax.set_title(f"{var_1} x {var_2}, its={its}")
-            ax.axvline(rdm_cor, color="red")
-        
-            img_path = res_folder + f'var_permutations/{var_1}_x_{var_2}_{emb_type}.png'
-            plt.savefig(img_path)
-        plt.clf()
+                img_path = res_folder + f'var_permutations/{var_1}_x_{var_2}_{emb_type}_{zet}.png'
+                plt.savefig(img_path)
+                plt.clf()
     else:
-        for i in range(len(vars)):
-            var_1 = vars[i]
 
-            if i == len(vars) - 1:
-                var_2 = vars[0]
-            else:
-                var_2 = vars[i+1]
-            
-            print(f'{var_1} x {var_2}')
+        for zet in zets:
+            print(f'{zet}')
+            for i in range(len(vars)):
+                var_1 = vars[i]
 
-            rdm_1 = rdms['train'][var_1]
-            rdm_2 = rdms['train'][var_2]
-            rdm_cor = spearmanr(squareform(rdm_1, checks=False), squareform(rdm_2, checks=False))[0]
-            print(f'cor: {rdm_cor}')
+                if i == len(vars) - 1:
+                    var_2 = vars[0]
+                else:
+                    var_2 = vars[i+1]
+                
+                print(f'{var_1} x {var_2}')
+
+                rdm_1 = rdms[zet][var_1]
+                rdm_2 = rdms[zet][var_2]
+                rdm_cor = spearmanr(squareform(rdm_1, checks=False), squareform(rdm_2, checks=False))[0]
+                print(f'cor: {rdm_cor}')
 
 
 def label_distances():
@@ -484,6 +709,11 @@ def permutation_analysis(var='objects', its=100):
     - build rdm
     - average rdm over all permutation
     - compare ga rdm to leave one out ga rdm 
+
+    var: str
+        'objects' 'scenes' 'actions'
+    its: int
+        how many iterations used to build ga rdm
     """
 
     print(f'Performing permutation analysis for {var}, its={its}')
@@ -530,7 +760,7 @@ def permutation_analysis(var='objects', its=100):
     n_stimuli = len(top_x_md)
     rdms = np.zeros((n_stimuli, n_stimuli, its))
 
-    for it in tqdm(range(its)):
+    for it in range(its):
 
         seed = it
         np.random.seed(seed)
@@ -616,13 +846,13 @@ def permutation_analysis(var='objects', its=100):
 # global_emb(emb_type='avg')
 # global_emb(emb_type='freq')
 
-# calc_t2_rdms('avg', sort=False)
+# calc_t2_rdms('avg', sort=False, metric=metric)
 # calc_t2_rdms('freq', sort=False)
 
 # plot_t2_rdms('avg', sort=False)
 # plot_t2_rdms('freq', sort=False)
 
-# rdm_t2_space_sim(emb_type='avg')
+rdm_t2_space_sim(emb_type='avg', test=True)
 # rdm_t2_space_sim(emb_type='freq')
 
 # label_distances()
@@ -630,4 +860,5 @@ def permutation_analysis(var='objects', its=100):
 # permutation_analysis(var='actions', its=100)
 # permutation_analysis(var='scenes', its=100)
 
-rdm_t2_emb_type_sim()
+# rdm_t2_emb_type_sim()
+# rdm_t2_space_sim(emb_type='perm_freq')
